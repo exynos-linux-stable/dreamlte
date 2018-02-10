@@ -4,7 +4,7 @@ choice
     default BCM_GPS_SPI_DRIVER
 
 config BCM_GPS_TTY_DRIVER
-    bool  "TTY"
+    bool "TTY"
     depends on TTY
     help
         Support for BRCM GPS UART driver.
