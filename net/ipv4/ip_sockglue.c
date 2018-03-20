@@ -43,6 +43,9 @@
 #endif
 #include <net/ip_fib.h>
 
+#ifdef CONFIG_MPTCP
+	#include <net/mptcp.h>
+#endif
 #include <linux/errqueue.h>
 #include <asm/uaccess.h>
 
@@ -721,6 +724,19 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 			inet->tos = val;
 			sk->sk_priority = rt_tos2priority(val);
 			sk_dst_reset(sk);
+#ifdef CONFIG_MPTCP
+			/* Update TOS on mptcp subflow */
+			if (is_meta_sk(sk)) {
+				struct sock *sk_it;
+				mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it) {
+					if (inet_sk(sk_it)->tos != inet_sk(sk)->tos) {
+						inet_sk(sk_it)->tos = inet_sk(sk)->tos;
+						sk_it->sk_priority = sk->sk_priority;
+						sk_dst_reset(sk_it);
+					}
+				}
+			}
+#endif
 		}
 		break;
 	case IP_TTL:
@@ -1190,7 +1206,14 @@ void ipv4_pktinfo_prepare(const struct sock *sk, struct sk_buff *skb)
 		pktinfo->ipi_ifindex = 0;
 		pktinfo->ipi_spec_dst.s_addr = 0;
 	}
-	skb_dst_drop(skb);
+	/* We need to keep the dst for __ip_options_echo()
+	 * We could restrict the test to opt.ts_needtime || opt.srr,
+	 * but the following is good enough as IP options are not often used.
+	 */
+	if (unlikely(IPCB(skb)->opt.optlen))
+		skb_dst_force(skb);
+	else
+		skb_dst_drop(skb);
 }
 
 int ip_setsockopt(struct sock *sk, int level,
