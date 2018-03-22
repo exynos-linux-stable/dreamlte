@@ -89,8 +89,6 @@ void ext4_free_crypt_info(struct ext4_crypt_info *ci)
 	if (!ci)
 		return;
 
-	if (ci->ci_keyring_key)
-		key_put(ci->ci_keyring_key);
 	if (!ci->private_enc_mode)
 		crypto_free_ablkcipher(ci->ci_ctfm);
 	kmem_cache_free(ext4_crypt_info_cachep, ci);

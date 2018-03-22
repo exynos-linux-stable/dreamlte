@@ -312,7 +312,7 @@ extern int sysctl_tcp_pacing_ss_ratio;
 extern int sysctl_tcp_pacing_ca_ratio;
 extern int sysctl_tcp_default_init_rwnd;
 #ifdef CONFIG_CLTCP
-extern int sysctl_tcp_cltcp[4]; 
+extern int sysctl_tcp_cltcp[4];
 extern unsigned long long sysctl_tcp_cltcp_ifdevs;
 #endif
 
@@ -406,7 +406,7 @@ bool tcp_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		      unsigned int cur_mss);
 unsigned int tcp_cwnd_test(const struct tcp_sock *tp, const struct sk_buff *skb);
 int tcp_init_tso_segs(struct sk_buff *skb, unsigned int mss_now);
-void __pskb_trim_head(struct sk_buff *skb, int len);
+int __pskb_trim_head(struct sk_buff *skb, int len);
 void tcp_queue_skb(struct sock *sk, struct sk_buff *skb);
 void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
 void tcp_reset(struct sock *sk);
@@ -930,7 +930,7 @@ struct tcp_skb_cb {
 
 #ifdef CONFIG_MPTCP
 	union {
-#endif	
+#endif
 	union {
 		struct inet_skb_parm	h4;
 #if IS_ENABLED(CONFIG_IPV6)
