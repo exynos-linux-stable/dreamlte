@@ -400,7 +400,7 @@ static void show_secure_fault_information(struct sysmmu_drvdata *drvdata,
 		port_name ? port_name : dev_name(drvdata->sysmmu),
 		(flags & IOMMU_FAULT_WRITE) ? "WRITE" : "READ",
 		sysmmu_fault_name[fault_id], fault_addr, &pgtable);
-	sec_debug_set_extra_info_sysmmu(temp_buf);	
+	sec_debug_set_extra_info_sysmmu(temp_buf);
 #endif
 
 	if (fault_id == SYSMMU_FAULT_UNKNOWN) {
@@ -490,7 +490,7 @@ static void show_fault_information(struct sysmmu_drvdata *drvdata,
 		port_name ? port_name : dev_name(drvdata->sysmmu),
 		(flags & IOMMU_FAULT_WRITE) ? "WRITE" : "READ",
 		sysmmu_fault_name[fault_id], fault_addr, &pgtable);
-	sec_debug_set_extra_info_sysmmu(temp_buf);	
+	sec_debug_set_extra_info_sysmmu(temp_buf);
 #endif
 
 	if (fault_id == SYSMMU_FAULT_UNKNOWN) {
@@ -1165,6 +1165,7 @@ static struct platform_driver exynos_sysmmu_driver __refdata = {
 		.name		= "exynos-sysmmu",
 		.of_match_table	= sysmmu_of_match,
 		.pm		= &sysmmu_pm_ops,
+		.suppress_bind_attrs = true,
 	}
 };
 

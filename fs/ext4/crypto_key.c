@@ -122,7 +122,7 @@ static inline int __ext4_get_fek(char *nonce, char *src_key, char *fe_key)
 #endif
 }
 
-int _ext4_get_encryption_info(struct inode *inode)
+int ext4_get_encryption_info(struct inode *inode)
 {
 	struct ext4_inode_info *ei = EXT4_I(inode);
 	struct ext4_crypt_info *crypt_info;
@@ -139,21 +139,12 @@ int _ext4_get_encryption_info(struct inode *inode)
 	char mode;
 	int res;
 
-	if (!ext4_read_workqueue) {
-		res = ext4_init_crypto();
-		if (res)
-			return res;
-	}
+	if (ei->i_crypt_info)
+		return 0;
 
-retry:
-	crypt_info = ACCESS_ONCE(ei->i_crypt_info);
-	if (crypt_info) {
-		if (!crypt_info->ci_keyring_key ||
-		    key_validate(crypt_info->ci_keyring_key) == 0)
-			return 0;
-		ext4_free_encryption_info(inode, crypt_info);
-		goto retry;
-	}
+	res = ext4_init_crypto();
+	if (res)
+		return res;
 
 	res = ext4_xattr_get(inode, EXT4_XATTR_INDEX_ENCRYPTION,
 				 EXT4_XATTR_NAME_ENCRYPTION_CONTEXT,
@@ -185,7 +176,6 @@ retry:
 	}
 #endif /* ifdef CONFIG_FMP_EXT4CRYPT_FS */
 	crypt_info->ci_ctfm = NULL;
-	crypt_info->ci_keyring_key = NULL;
 	memcpy(crypt_info->ci_master_key, ctx.master_key_descriptor,
 	       sizeof(crypt_info->ci_master_key));
 	if (S_ISREG(inode->i_mode))
@@ -242,7 +232,6 @@ retry:
 		keyring_key = NULL;
 		goto out;
 	}
-	crypt_info->ci_keyring_key = keyring_key;
 	if (keyring_key->type != &key_type_logon) {
 		printk_once(KERN_WARNING
 			     "ext4: key type must be logon\n");
@@ -251,6 +240,12 @@ retry:
 	}
 	down_read(&keyring_key->sem);
 	ukp = user_key_payload(keyring_key);
+	if (!ukp) {
+		/* key was revoked before we acquired its semaphore */
+		res = -EKEYREVOKED;
+		up_read(&keyring_key->sem);
+		goto out;
+	}
 	if (ukp->datalen != sizeof(struct ext4_encryption_key)) {
 		res = -EINVAL;
 		up_read(&keyring_key->sem);
@@ -290,26 +285,23 @@ got_key:
 			       __func__, res, (unsigned) inode->i_ino);
 			goto out;
 		}
-		crypt_info->ci_ctfm = ctfm;
-		crypto_ablkcipher_clear_flags(ctfm, ~0);
-		crypto_tfm_set_flags(crypto_ablkcipher_tfm(ctfm),
-				     CRYPTO_TFM_REQ_WEAK_KEY);
-		res = crypto_ablkcipher_setkey(ctfm, raw_key,
-					       ext4_encryption_key_size(mode));
-		if (res)
-			goto out;
 	}
+	crypt_info->ci_ctfm = ctfm;
+	crypto_ablkcipher_clear_flags(ctfm, ~0);
+	crypto_tfm_set_flags(crypto_ablkcipher_tfm(ctfm),
+			     CRYPTO_TFM_REQ_WEAK_KEY);
+	res = crypto_ablkcipher_setkey(ctfm, raw_key,
+				       ext4_encryption_key_size(mode));
+	if (res)
+		goto out;
 	inode->i_mapping->private_enc_mode = crypt_info->private_enc_mode;
-	memzero_explicit(raw_key, sizeof(raw_key));
-	if (cmpxchg(&ei->i_crypt_info, NULL, crypt_info) != NULL) {
-		ext4_free_crypt_info(crypt_info);
-		goto retry;
-	}
-	return 0;
 
+	if (cmpxchg(&ei->i_crypt_info, NULL, crypt_info) == NULL)
+		crypt_info = NULL;
 out:
 	if (res == -ENOKEY)
 		res = 0;
+	key_put(keyring_key);
 	ext4_free_crypt_info(crypt_info);
 	memzero_explicit(raw_key, sizeof(raw_key));
 	return res;

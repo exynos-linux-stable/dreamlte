@@ -35,6 +35,7 @@
 #include <asm/traps.h>
 #include <asm/cputype.h>
 #include <asm/system_misc.h>
+#include <asm/uaccess.h>
 
 #ifdef CONFIG_SEC_KWATCHER
 #include <linux/sec_kwatcher.h>
@@ -685,8 +686,8 @@ static int breakpoint_handler(unsigned long unused, unsigned int esr,
 		*exclusive_step = 0;
 		return 0;
 	}
-#endif	
-	
+#endif
+
 	for (i = 0; i < core_num_brps; ++i) {
 		rcu_read_lock();
 
@@ -784,9 +785,9 @@ static u64 get_distance_from_watchpoint(unsigned long addr, u64 val,
 }
 
 #ifdef CONFIG_SEC_KWATCHER
-static void (*func_kwatcher_hook)(unsigned long addr, unsigned int esr, 
+static void (*func_kwatcher_hook)(unsigned long addr, unsigned int esr,
 					 struct pt_regs *regs);
-void register_kwatcher_hook_handler(void (*func) (unsigned long addr, 
+void register_kwatcher_hook_handler(void (*func) (unsigned long addr,
 					  unsigned int esr,struct pt_regs *regs)){
 	func_kwatcher_hook = func;
 }
@@ -912,7 +913,7 @@ static int watchpoint_handler(unsigned long addr, unsigned int esr,
 				}
 			}
 		}
-		
+
 		else
 #endif
 		{
@@ -969,7 +970,7 @@ int reinstall_suspended_bps(struct pt_regs *regs)
 		toggle_bp_registers(AARCH64_DBG_REG_BCR, DBG_ACTIVE_EL1, 1);
 		toggle_bp_registers(AARCH64_DBG_REG_WCR, DBG_ACTIVE_EL1, 1);
 
-// should move this routine to proper module		
+// should move this routine to proper module
 #ifdef CONFIG_SEC_KWATCHER
 		// restore irq mask status if wp handler forces to mask irq
 		{

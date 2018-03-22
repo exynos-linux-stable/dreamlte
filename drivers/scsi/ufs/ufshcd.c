@@ -4499,18 +4499,25 @@ out:
 }
 
 /**
- * ufshcd_force_reset_auto_bkops - force enable of auto bkops
+ * ufshcd_force_reset_auto_bkops - force reset auto bkops state
  * @hba: per adapter instance
  *
  * After a device reset the device may toggle the BKOPS_EN flag
  * to default value. The s/w tracking variables should be updated
- * as well. Do this by forcing enable of auto bkops.
+ * as well. This function would change the auto-bkops state based on
+ * UFSHCD_CAP_KEEP_AUTO_BKOPS_ENABLED_EXCEPT_SUSPEND.
  */
-static void  ufshcd_force_reset_auto_bkops(struct ufs_hba *hba)
+static void ufshcd_force_reset_auto_bkops(struct ufs_hba *hba)
 {
-	hba->auto_bkops_enabled = false;
-	hba->ee_ctrl_mask |= MASK_EE_URGENT_BKOPS;
-	ufshcd_enable_auto_bkops(hba);
+	if (ufshcd_keep_autobkops_enabled_except_suspend(hba)) {
+		hba->auto_bkops_enabled = false;
+		hba->ee_ctrl_mask |= MASK_EE_URGENT_BKOPS;
+		ufshcd_enable_auto_bkops(hba);
+	} else {
+		hba->auto_bkops_enabled = true;
+		hba->ee_ctrl_mask &= ~MASK_EE_URGENT_BKOPS;
+		ufshcd_disable_auto_bkops(hba);
+	}
 }
 
 static inline int ufshcd_get_bkops_status(struct ufs_hba *hba, u32 *status)
@@ -5669,7 +5676,7 @@ retry:
 			hba->max_pwr_info.info.pwr_tx == FASTAUTO_MODE)
 			dev_info(hba->dev, "HS mode configured\n");
 	}
-	
+
 	hba->rst_info.rst_type = UFS_RESET_DEFAULT;
 	spin_lock_irqsave(hba->host->host_lock, flags);
 	hba->ufshcd_state = UFSHCD_STATE_OPERATIONAL;
@@ -5721,7 +5728,7 @@ out:
 			__func__, ret, re_cnt);
 #if defined(CONFIG_SCSI_UFS_TEST_MODE)
 		ufshcd_vops_dbg_register_dump(hba);
-#endif			
+#endif
 		goto retry;
 	} else if (ret && re_cnt >= UFS_LINK_SETUP_RETRIES) {
 		dev_err(hba->dev, "%s failed after retries with err %d\n",
@@ -6076,11 +6083,14 @@ static int ufshcd_config_vreg(struct device *dev,
 		struct ufs_vreg *vreg, bool on)
 {
 	int ret = 0;
-	struct regulator *reg = vreg->reg;
-	const char *name = vreg->name;
+	struct regulator *reg;
+	const char *name;
 	int min_uV, uA_load;
 
 	BUG_ON(!vreg);
+
+	reg = vreg->reg;
+	name = vreg->name;
 
 	if (regulator_count_voltages(reg) > 0) {
 		min_uV = on ? vreg->min_uV : 0;
@@ -6915,11 +6925,14 @@ static int ufshcd_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 			goto set_old_link_state;
 	}
 
-	/*
-	 * If BKOPs operations are urgently needed at this moment then
-	 * keep auto-bkops enabled or else disable it.
-	 */
-	ufshcd_urgent_bkops(hba);
+	if (ufshcd_keep_autobkops_enabled_except_suspend(hba))
+		ufshcd_enable_auto_bkops(hba);
+	else
+		/*
+		 * If BKOPs operations are urgently needed at this moment then
+		 * keep auto-bkops enabled or else disable it.
+		 */
+		ufshcd_urgent_bkops(hba);
 #ifdef CONFIG_SCSI_UFS_ASYNC_RELINK
 async_resume:
 #endif
@@ -7099,10 +7112,10 @@ out:
 	if (ret)
 		dev_err(hba->dev, "%s failed, err %d\n", __func__, ret);
 	/* allow force shutdown even in case of errors */
-	
-	dev_err(hba->dev, "Count: %d %d %d %d %d Type: %d\n", 
+
+	dev_err(hba->dev, "Count: %d %d %d %d %d Type: %d\n",
 	hba->rst_info.rst_total, hba->rst_info.rst_cnt_probe, hba->rst_info.rst_cnt_uic_err,
-	hba->rst_info.rst_cnt_host_reset, hba->rst_info.rst_cnt_hibern8, hba->rst_info.rst_type); 
+	hba->rst_info.rst_cnt_host_reset, hba->rst_info.rst_cnt_hibern8, hba->rst_info.rst_type);
 
 	return 0;
 }
@@ -7217,7 +7230,7 @@ static ssize_t SEC_UFS_##name##_show (struct device *dev, struct device_attribut
 	return sprintf(buf, fmt, args);									\
 }													\
 static DEVICE_ATTR(name, (S_IRUGO|S_IWUSR|S_IWGRP), SEC_UFS_##name##_show, NULL)
- 
+
 SEC_UFS_DATA_ATTR(SEC_UFS_op_cnt, "\"HWRESET\":\"%u\",\"LINKFAIL\":\"%u\",\"H8ENTERFAIL\":\"%u\",\"H8EXITFAIL\":\"%u\"\n",
 		err_info->op_count.HW_RESET_count, err_info->op_count.link_startup_count,
 		err_info->op_count.Hibern8_enter_count, err_info->op_count.Hibern8_exit_count);
@@ -7507,7 +7520,7 @@ static void ufs_sec_send_errinfo (void *data) {
 	if (&(hba->SEC_err_info))
 	{
 		err_info = &(hba->SEC_err_info);
-		sprintf(buf, "U%dH%dL%dX%dQ%dR%dW%dF%d", 
+		sprintf(buf, "U%dH%dL%dX%dQ%dR%dW%dF%d",
 				(err_info->UTP_count.UTP_err > 9) 				/* UTP Error */
 				? 9 : err_info->UTP_count.UTP_err,
 				(err_info->op_count.HW_RESET_count > 9) 		/* HW Reset */

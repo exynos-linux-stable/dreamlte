@@ -35,15 +35,15 @@ struct device *create_function_device(char *name)
 	if (android_device && !IS_ERR(android_device))
 	{
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-		if (!strcmp(name, "terminal_version")) 
+		if (!strcmp(name, "terminal_version"))
 			return android_device;
 		else
-#endif			
+#endif
 		{
 			return device_create(android_class, android_device,
 				MKDEV(0, index++), NULL, name);
 		}
-	}	
+	}
 	else
 		return ERR_PTR(-EINVAL);
 }
@@ -355,7 +355,6 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 		ret = unregister_gadget(gi);
 		if (ret)
 			goto err;
-		/* prevent memory leak */
 		kfree(name);
 	} else {
 		if (gi->udc_name) {
@@ -1631,7 +1630,7 @@ static int android_setup(struct usb_gadget *gadget,
 					break;
 				}
 			}
-		}	
+		}
 
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 	if (value < 0)
@@ -1653,7 +1652,7 @@ static int android_setup(struct usb_gadget *gadget,
 			cdev->mute_switch == true)
 		cdev->mute_switch = false;
 #endif
-	
+
 	if (c->bRequest == USB_REQ_SET_CONFIGURATION &&
 						cdev->config) {
 		schedule_work(&gi->work);
@@ -1689,7 +1688,7 @@ static void android_disconnect(struct usb_gadget *gadget)
 		printk(KERN_DEBUG"usb: %s mute_switch con(%d) sw(%d)\n",
 			 __func__, gi->connected, gi->sw_connected);
 	} else {
-	
+
 	//	set_ncm_ready(false);
 		if (cdev->force_disconnect) {
 			gi->sw_connected = 1;
@@ -1705,7 +1704,7 @@ static void android_disconnect(struct usb_gadget *gadget)
 #else
 	schedule_work(&gi->work);
 	composite_disconnect(gadget);
-#endif	
+#endif
 }
 #endif
 
@@ -1802,12 +1801,12 @@ static void make_usb_func_link(struct gadget_info *dev, char * buf)
 							cdev->desc.bcdDevice = cpu_to_le16(0x0800);
 						}
 					}
-#endif					
+#endif
 					list_move_tail(&f->list, &cfg->func_list);
 				}
 			}
 		}
-	}	
+	}
 }
 
 static ssize_t
@@ -1902,7 +1901,7 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 				}
 			}
 			name = kstrdup(dwc_name, GFP_KERNEL);
-			if (name) {		
+			if (name) {
 				len = sizeof(dwc_name);
 				if (name[len - 1] == '\n')
 					name[len - 1] = '\0';
@@ -1914,7 +1913,7 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 				dev->udc_name = name;
 				gadget = cdev->gadget;
 			}
-		}	
+		}
 
 		if (!gadget) {
 			pr_info("usb: %s: Gadget is NULL: %p\n", __func__, gadget);
@@ -2002,7 +2001,7 @@ bcdUSB_show(struct device *pdev, struct device_attribute *attr, char *buf)
 	struct gadget_info *dev = dev_get_drvdata(pdev);
 
 	return sprintf(buf, "%04x\n", dev->cdev.desc.bcdUSB);
-	
+
 }
 static DEVICE_ATTR(bcdUSB, S_IRUGO, bcdUSB_show, NULL);
 #endif
@@ -2013,7 +2012,7 @@ static struct device_attribute *android_usb_attributes[] = {
 	&dev_attr_functions,
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 	&dev_attr_bcdUSB,
-#endif	
+#endif
 	NULL
 };
 
@@ -2075,6 +2074,7 @@ static struct config_group *gadgets_make(
 	gi = kzalloc(sizeof(*gi), GFP_KERNEL);
 	if (!gi)
 		return ERR_PTR(-ENOMEM);
+
 	gi->group.default_groups = gi->default_groups;
 	gi->group.default_groups[0] = &gi->functions_group;
 	gi->group.default_groups[1] = &gi->configs_group;
@@ -2122,7 +2122,6 @@ static struct config_group *gadgets_make(
 	config_group_init_type_name(&gi->group, name,
 				&gadget_root_type);
 	return &gi->group;
-
 err:
 	kfree(gi);
 	return ERR_PTR(-ENOMEM);

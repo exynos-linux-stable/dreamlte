@@ -471,7 +471,7 @@ static int vmw_cmd_invalid(struct vmw_private *dev_priv,
 			   struct vmw_sw_context *sw_context,
 			   SVGA3dCmdHeader *header)
 {
-	return capable(CAP_SYS_ADMIN) ? : -EINVAL;
+	return -EINVAL;
 }
 
 static int vmw_cmd_ok(struct vmw_private *dev_priv,
@@ -2678,6 +2678,8 @@ static int vmw_cmd_dx_view_define(struct vmw_private *dev_priv,
 	}
 
 	view_type = vmw_view_cmd_to_type(header->id);
+	if (view_type == vmw_view_max)
+		return -EINVAL;
 	cmd = container_of(header, typeof(*cmd), header);
 	ret = vmw_cmd_res_check(dev_priv, sw_context, vmw_res_surface,
 				user_surface_converter,
@@ -3830,13 +3832,13 @@ static void *vmw_execbuf_cmdbuf(struct vmw_private *dev_priv,
 	int ret;
 
 	*header = NULL;
-	if (!dev_priv->cman || kernel_commands)
-		return kernel_commands;
-
 	if (command_size > SVGA_CB_MAX_SIZE) {
 		DRM_ERROR("Command buffer is too large.\n");
 		return ERR_PTR(-EINVAL);
 	}
+
+	if (!dev_priv->cman || kernel_commands)
+		return kernel_commands;
 
 	/* If possible, add a little space for fencing. */
 	cmdbuf_size = command_size + 512;

@@ -187,7 +187,7 @@ EXPORT_SYMBOL(setattr_copy);
  * the file open for write, as there can be no conflicting delegation in
  * that case.
  */
-int notify_change2(struct vfsmount *mnt, struct dentry *dentry, struct iattr *attr, struct inode **delegated_inode)
+int notify_change2(struct vfsmount *mnt, struct dentry * dentry, struct iattr * attr, struct inode **delegated_inode)
 {
 	struct inode *inode = dentry->d_inode;
 	umode_t mode = inode->i_mode;
@@ -200,6 +200,21 @@ int notify_change2(struct vfsmount *mnt, struct dentry *dentry, struct iattr *at
 	if (ia_valid & (ATTR_MODE | ATTR_UID | ATTR_GID | ATTR_TIMES_SET)) {
 		if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
 			return -EPERM;
+	}
+
+	/*
+	 * If utimes(2) and friends are called with times == NULL (or both
+	 * times are UTIME_NOW), then we need to check for write permission
+	 */
+	if (ia_valid & ATTR_TOUCH) {
+		if (IS_IMMUTABLE(inode))
+			return -EPERM;
+
+		if (!inode_owner_or_capable(inode)) {
+			error = inode_permission2(mnt, inode, MAY_WRITE);
+			if (error)
+				return error;
+		}
 	}
 
 	if ((ia_valid & ATTR_MODE)) {
@@ -279,7 +294,7 @@ int notify_change2(struct vfsmount *mnt, struct dentry *dentry, struct iattr *at
 }
 EXPORT_SYMBOL(notify_change2);
 
-int notify_change(struct dentry *dentry, struct iattr *attr, struct inode **delegated_inode)
+int notify_change(struct dentry * dentry, struct iattr * attr, struct inode **delegated_inode)
 {
 	return notify_change2(NULL, dentry, attr, delegated_inode);
 }
