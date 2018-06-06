@@ -5,13 +5,13 @@
  * DHD OS, bus, and protocol modules.
  *
  * Copyright (C) 1999-2017, Broadcom Corporation
- * 
+ *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
  * available at http://www.broadcom.com/licenses/GPLv2.php, with the
  * following added to such license:
- * 
+ *
  *      As a special exception, the copyright holders of this software give you
  * permission to link this software with independent modules, and to copy and
  * distribute the resulting executable under terms of your choice, provided that
@@ -19,7 +19,7 @@
  * the license of that module.  An independent module is a module which is not
  * derived from this software.  The special exception does not apply to any
  * modifications of the software.
- * 
+ *
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
@@ -287,13 +287,7 @@ enum dhd_op_flags {
 #define DHD_SCAN_DEF_TIMEOUT 10000 /* ms: Max time out for scan in progress */
 #endif
 
-#ifndef CONFIG_BCMDHD_CLM_PATH
-#if defined(CUSTOMER_HW4) && defined(PLATFORM_SLP)
-#define CONFIG_BCMDHD_CLM_PATH "/lib/firmware/bcmdhd_clm.blob"
-#else
 #define CONFIG_BCMDHD_CLM_PATH "/etc/wifi/bcmdhd_clm.blob"
-#endif /* CUSTOMER_HW4 && PLATFORM_SLP */
-#endif /* CONFIG_BCMDHD_CLM_PATH */
 #define WL_CCODE_NULL_COUNTRY  "#n"
 
 #define FW_VER_STR_LEN	128
@@ -511,7 +505,7 @@ typedef struct {
 	uint8 dhd_dwm_enabled;
 	uint8 dhd_dwm_tbl[DHD_DWM_TBL_SIZE];
 } dhd_trf_mgmt_dwm_tbl_t;
-#endif 
+#endif
 
 #define DHD_NULL_CHK_AND_RET(cond) \
 	if (!cond) { \
@@ -767,7 +761,7 @@ typedef struct dhd_pub {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25))
 	struct mutex 	wl_start_stop_lock; /* lock/unlock for Android start/stop */
 	struct mutex 	wl_softap_lock;		 /* lock/unlock for any SoftAP/STA settings */
-#endif 
+#endif
 
 #ifdef PROP_TXSTATUS
 	bool	wlfc_enabled;
@@ -907,7 +901,7 @@ typedef struct dhd_pub {
 
 #if defined(TRAFFIC_MGMT_DWM)
 	dhd_trf_mgmt_dwm_tbl_t dhd_tm_dwm_tbl;
-#endif 
+#endif
 #ifdef DHD_L2_FILTER
 	unsigned long l2_filter_cnt;	/* for L2_FILTER ARP table timeout */
 #endif /* DHD_L2_FILTER */
@@ -2048,26 +2042,9 @@ extern uint dhd_pktgen_len;
 extern char fw_path2[MOD_PARAM_PATHLEN];
 #endif
 
-#if defined(ANDROID_PLATFORM_VERSION)
-#if (ANDROID_PLATFORM_VERSION < 7)
-#define DHD_LEGACY_FILE_PATH
-#define VENDOR_PATH "/system"
-#elif (ANDROID_PLATFORM_VERSION == 7)
-#define VENDOR_PATH "/system"
-#elif (ANDROID_PLATFORM_VERSION >= 8)
 #define VENDOR_PATH "/vendor"
-#endif /* ANDROID_PLATFORM_VERSION < 7 */
-#else
-#define VENDOR_PATH ""
-#endif /* ANDROID_PLATFORM_VERSION */
 
-#ifdef DHD_LEGACY_FILE_PATH
-#define PLATFORM_PATH	"/data/"
-#elif defined(PLATFORM_SLP)
-#define PLATFORM_PATH	"/opt/etc/"
-#else
 #define PLATFORM_PATH	"/data/misc/conn/"
-#endif /* DHD_LEGACY_FILE_PATH */
 
 /* Flag to indicate if we should download firmware on driver load */
 extern uint dhd_download_fw_on_driverload;

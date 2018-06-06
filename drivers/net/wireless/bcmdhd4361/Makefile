@@ -1,12 +1,12 @@
 #
 # Copyright (C) 1999-2017, Broadcom Corporation
-# 
+#
 #      Unless you and Broadcom execute a separate written software license
 # agreement governing use of this software, this software is licensed to you
 # under the terms of the GNU General Public License version 2 (the "GPL"),
 # available at http://www.broadcom.com/licenses/GPLv2.php, with the
 # following added to such license:
-# 
+#
 #      As a special exception, the copyright holders of this software give you
 # permission to link this software with independent modules, and to copy and
 # distribute the resulting executable under terms of your choice, provided that
@@ -14,7 +14,7 @@
 # the license of that module.  An independent module is a module which is not
 # derived from this software.  The special exception does not apply to any
 # modifications of the software.
-# 
+#
 #      Notwithstanding the above, under no circumstances may you combine this
 # software in any way with any other Broadcom software provided under a license
 # other than the GPL, without Broadcom's express prior written consent.
@@ -248,7 +248,7 @@ DHDCFLAGS += -DPKTPRIO_OVERRIDE
 # Prevent rx thread monopolize
 DHDCFLAGS += -DWAIT_DEQUEUE
 
-# Control PM related value for MFG process(Read from file) 
+# Control PM related value for MFG process(Read from file)
 DHDCFLAGS += -DDHD_PM_CONTROL_FROM_FILE
 
 # Use Android wake lock mechanism
@@ -299,12 +299,6 @@ endif
 # Disable VHT(5G HT80) mode
 ifeq ($(CONFIG_WLAN_VHTDISABLE),y)
 DHDCFLAGS += -DDHD_DISABLE_VHTMODE
-endif
-
-# Android Version Check from Platform source
-ifneq ($(PLATFORM_VERSION),)
-MAJOR_VERSION := $(shell echo $(PLATFORM_VERSION) | cut -d "." -f 1)
-DHDCFLAGS += -DANDROID_PLATFORM_VERSION=$(MAJOR_VERSION)
 endif
 
 ##############################
@@ -461,16 +455,8 @@ endif
 # Generate .softap.info
   DHDCFLAGS += -DGEN_SOFTAP_INFO_FILE
 
-ifneq ($(PLATFORM_VERSION),)
-# DREAM Android N OS should not use below features
-ifeq ($(shell expr $(PLATFORM_VERSION) \< 8.0),1)
-ifneq ($(filter y,$(CONFIG_WLAN_GREAT) $(CONFIG_SEC_GREATQLTE_PROJECT)),y)
  DREAM_NOS_DISCARD_FEATURES := y
-endif
-endif
 
-# Feature Set used for GREAT N OS and Android O OS
-ifneq ($(DREAM_NOS_DISCARD_FEATURES),y)
 # Debugaility
   DHDCFLAGS += -DDEBUGABILITY
   DHDCFLAGS += -DDHD_PKT_LOGGING
@@ -488,25 +474,16 @@ ifneq ($(DREAM_NOS_DISCARD_FEATURES),y)
   DHDCFLAGS += -DSTAT_REPORT
 #define temp static only when SDK doesn't support static memory for STAT REPORT
 #  DHDCFLAGS += -DSTAT_REPORT_TEMP_STATIC
-endif
 
 # RSSI_SUM_REPORT is used over Android O OS only
-ifeq ($(shell expr $(PLATFORM_VERSION) \>= 8.0),1)
 # RSSI Logging
   DHDCFLAGS += -DSUPPORT_RSSI_SUM_REPORT
 # Enable NDO_CONFIG_SUPPORT in HAL
   DHDCFLAGS += -DNDO_CONFIG_SUPPORT
 # changed assoc timeout
   DHDCFLAGS += -DCUSTOM_ASSOC_TIMEOUT=20
-endif
-endif
 
-# Use Legacy dump path
-ifneq ($(USE_LEGACY_DUMP_PATH),)
-  DHDCFLAGS += -DDHD_COMMON_DUMP_PATH="\"/data/media/wifi/log/\""
-else
   DHDCFLAGS += -DDHD_COMMON_DUMP_PATH="\"/data/log/wifi/\""
-endif
 
 # For Samsung factory mode only
 ifeq ($(CONFIG_SEC_FACTORY),y)
