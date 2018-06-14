@@ -853,7 +853,8 @@ static ssize_t mem_rw(struct file *file, char __user *buf,
 	ssize_t copied;
 	char *page;
 
-	if (!mm)
+	/* Ensure the process spawned far enough to have an environment. */
+	if (!mm || !mm->env_end)
 		return 0;
 
 	page = (char *)__get_free_page(GFP_TEMPORARY);
@@ -2304,7 +2305,7 @@ static int timerslack_ns_show(struct seq_file *m, void *v)
 	}
 
 	task_lock(p);
-	seq_printf(m, "%llu\n", p->timer_slack_ns);
+	seq_printf(m, "%lu\n", p->timer_slack_ns);
 	task_unlock(p);
 
 out:
@@ -2852,6 +2853,7 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_PROC_PAGE_MONITOR
 	REG("clear_refs", S_IWUSR, proc_clear_refs_operations),
 	REG("smaps",      S_IRUGO, proc_pid_smaps_operations),
+	REG("smaps_simple", S_IRUGO, proc_pid_smaps_simple_operations),
 	REG("pagemap",    S_IRUSR, proc_pagemap_operations),
 #endif
 #ifdef CONFIG_SECURITY

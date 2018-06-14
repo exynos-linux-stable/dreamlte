@@ -407,10 +407,10 @@ config SCHED_WALT
         depends on SMP
         depends on FAIR_GROUP_SCHED
         help
-        This feature will allow the scheduler to maintain a tunable window
-	based set of metrics for tasks and runqueues. These metrics can be
-	used to guide task placement as well as task frequency requirements
-	for cpufreq governors.
+	  This feature will allow the scheduler to maintain a tunable window
+	  based set of metrics for tasks and runqueues. These metrics can be
+	  used to guide task placement as well as task frequency requirements
+	  for cpufreq governors.
 
 config BSD_PROCESS_ACCT
 	bool "BSD Process Accounting"
@@ -1276,7 +1276,7 @@ config SCHED_AUTOGROUP
 
 config SCHED_TUNE
 	bool "Boosting for CFS tasks (EXPERIMENTAL)"
-	depends on SMP
+	depends on CPU_FREQ_GOV_SCHEDUTIL
 	help
 	  This option enables the system-wide support for task boosting.
 	  When this support is enabled a new sysctl interface is exposed to
@@ -1301,15 +1301,18 @@ config SCHED_TUNE
 
 	  If unsure, say N.
 
-config DEFAULT_USE_ENERGY_AWARE
-	bool "Default to enabling the Energy Aware Scheduler feature"
+config SCHED_USE_FLUID_RT
+	bool "Enable Fluid RT scheduler feature"
+	depends on SMP
 	default n
 	help
-	  This option defaults the ENERGY_AWARE scheduling feature to true,
-	  as without SCHED_DEBUG set this feature can't be enabled or disabled
-	  via sysctl.
+		Basically, the Fluid RT selects the core by a task priority as usual.
+		But beyond the basic behavior, FRT performs the load balancing of
+		RT task by core selection with reference to utilization of rq.
+		And in some circumstances, she allows the task with lower priority
+		to preempt the higher one based on weighted load.
 
-	  Say N if unsure.
+		Say N if unsure.
 
 config SYSFS_DEPRECATED
 	bool "Enable deprecated sysfs features to support old userspace tools"
@@ -1870,6 +1873,12 @@ config SYSTEM_DATA_VERIFICATION
 	  trusted keyring to provide public keys.  This then can be used for
 	  module verification, kexec image verification and firmware blob
 	  verification.
+
+config DEFERRED_INITCALLS
+	bool "Deferred initcalls support"
+	default n
+	help
+	  Say 'y' here to include support for deferred initcalls
 
 config PROFILING
 	bool "Profiling support"

@@ -44,6 +44,7 @@
 #include <linux/of_platform.h>
 #include <linux/efi.h>
 #include <linux/psci.h>
+#include <linux/mm.h>
 
 #include <asm/acpi.h>
 #include <asm/fixmap.h>
@@ -63,6 +64,10 @@
 #include <asm/efi.h>
 #include <asm/xen/hypervisor.h>
 #include <asm/mmu_context.h>
+
+#if defined(CONFIG_ECT)
+#include <soc/samsung/ect_parser.h>
+#endif
 
 phys_addr_t __fdt_pointer __initdata;
 
@@ -105,6 +110,32 @@ void __init smp_setup_processor_id(void)
 	set_my_cpu_offset(0);
 	pr_info("Booting Linux on physical CPU 0x%lx\n", (unsigned long)mpidr);
 }
+
+#if defined(CONFIG_ECT)
+int __init early_init_dt_scan_ect(unsigned long node, const char *uname,
+		int depth, void *data)
+{
+	int address = 0, size = 0;
+	const __be32 *paddr, *psize;
+
+	if (depth != 1 || (strcmp(uname, "ect") != 0))
+		return 0;
+
+	paddr = of_get_flat_dt_prop(node, "parameter_address", &address);
+	if (paddr == NULL)
+		return 0;
+
+	psize = of_get_flat_dt_prop(node, "parameter_size", &size);
+	if (psize == NULL)
+		return -1;
+
+	pr_info("[ECT] Address %x, Size %x\b", be32_to_cpu(*paddr), be32_to_cpu(*psize));
+	memblock_reserve(be32_to_cpu(*paddr), be32_to_cpu(*psize));
+	ect_init(be32_to_cpu(*paddr), be32_to_cpu(*psize));
+
+	return 1;
+}
+#endif
 
 bool arch_match_cpu_phys_id(int cpu, u64 phys_id)
 {
@@ -194,6 +225,11 @@ static void __init setup_machine_fdt(phys_addr_t dt_phys)
 	}
 
 	dump_stack_set_arch_desc("%s (DT)", of_flat_dt_get_machine_name());
+
+#if defined(CONFIG_ECT)
+	/* Scan dvfs paramter information, address that loaded on DRAM and size */
+	of_scan_flat_dt(early_init_dt_scan_ect, NULL);
+#endif
 }
 
 static void __init request_standard_resources(void)
@@ -201,10 +237,10 @@ static void __init request_standard_resources(void)
 	struct memblock_region *region;
 	struct resource *res;
 
-	kernel_code.start   = virt_to_phys(_text);
-	kernel_code.end     = virt_to_phys(__init_begin - 1);
-	kernel_data.start   = virt_to_phys(_sdata);
-	kernel_data.end     = virt_to_phys(_end - 1);
+	kernel_code.start   = __pa_symbol(_text);
+	kernel_code.end     = __pa_symbol(__init_begin - 1);
+	kernel_data.start   = __pa_symbol(_sdata);
+	kernel_data.end     = __pa_symbol(_end - 1);
 
 	for_each_memblock(memory, region) {
 		res = alloc_bootmem_low(sizeof(*res));
@@ -354,9 +390,9 @@ void __init setup_arch(char **cmdline_p)
 	 * thread.
 	 */
 #ifdef CONFIG_THREAD_INFO_IN_TASK
-	init_task.thread_info.ttbr0 = virt_to_phys(empty_zero_page);
+	init_task.thread_info.ttbr0 = __pa_symbol(empty_zero_page);
 #else
-	init_thread_info.ttbr0 = virt_to_phys(empty_zero_page);
+	init_thread_info.ttbr0 = __pa_symbol(empty_zero_page);
 #endif
 #endif
 
@@ -408,11 +444,11 @@ subsys_initcall(topology_init);
 static int dump_kernel_offset(struct notifier_block *self, unsigned long v,
 			      void *p)
 {
-	u64 const kaslr_offset = kimage_vaddr - KIMAGE_VADDR;
+	const unsigned long offset = kaslr_offset();
 
-	if (IS_ENABLED(CONFIG_RANDOMIZE_BASE) && kaslr_offset > 0) {
-		pr_emerg("Kernel Offset: 0x%llx from 0x%lx\n",
-			 kaslr_offset, KIMAGE_VADDR);
+	if (IS_ENABLED(CONFIG_RANDOMIZE_BASE) && offset > 0) {
+		pr_emerg("Kernel Offset: 0x%lx from 0x%lx\n",
+			 offset, KIMAGE_VADDR);
 	} else {
 		pr_emerg("Kernel Offset: disabled\n");
 	}

@@ -125,7 +125,6 @@ extern int verity_hash(struct dm_verity *v, struct shash_desc *desc,
 
 extern int verity_hash_for_block(struct dm_verity *v, struct dm_verity_io *io,
 				 sector_t block, u8 *digest, bool *is_zero);
-
 extern void verity_status(struct dm_target *ti, status_type_t type,
 			unsigned status_flags, char *result, unsigned maxlen);
 extern int verity_prepare_ioctl(struct dm_target *ti,

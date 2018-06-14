@@ -32,6 +32,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/module.h>
 #include <linux/init.h>
 #include <linux/moduleparam.h>
 #include <linux/kernel.h>
@@ -61,6 +62,7 @@ static int lowmem_minfree[6] = {
 	16 * 1024,	/* 64MB */
 };
 static int lowmem_minfree_size = 4;
+static uint32_t lowmem_lmkcount = 0;
 
 static unsigned long lowmem_deathpending_timeout;
 
@@ -69,6 +71,23 @@ static unsigned long lowmem_deathpending_timeout;
 		if (lowmem_debug_level >= (level))	\
 			pr_info(x);			\
 	} while (0)
+
+#if defined(CONFIG_ZSWAP)
+extern u64 zswap_pool_pages;
+extern atomic_t zswap_stored_pages;
+#endif
+
+static int test_task_flag(struct task_struct *p, int flag)
+{
+	struct task_struct *t = p;
+
+	do {
+		if (test_tsk_thread_flag(t, flag))
+			return 1;
+	} while_each_thread(p, t);
+
+	return 0;
+}
 
 static unsigned long lowmem_count(struct shrinker *s,
 				  struct shrink_control *sc)
@@ -129,15 +148,27 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		if (tsk->flags & PF_KTHREAD)
 			continue;
 
+		if (same_thread_group(tsk, current))
+			continue;
+
+#if defined(CONFIG_ARM) || defined(CONFIG_ARM64)
+		if (test_task_flag(tsk, TIF_MEMALLOC))
+			continue;
+#endif
 		p = find_lock_task_mm(tsk);
 		if (!p)
 			continue;
 
-		if (test_tsk_thread_flag(p, TIF_MEMDIE) &&
-		    time_before_eq(jiffies, lowmem_deathpending_timeout)) {
+		if (test_tsk_thread_flag(p, TIF_MEMDIE)) {
 			task_unlock(p);
-			rcu_read_unlock();
-			return 0;
+
+			if (time_before_eq(jiffies,
+					   lowmem_deathpending_timeout)) {
+				rcu_read_unlock();
+				return 0;
+			}
+
+			continue;
 		}
 		oom_score_adj = p->signal->oom_score_adj;
 		if (oom_score_adj < min_score_adj) {
@@ -145,6 +176,14 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			continue;
 		}
 		tasksize = get_mm_rss(p->mm);
+#if defined(CONFIG_ZSWAP)
+		if (atomic_read(&zswap_stored_pages)) {
+			lowmem_print(3, "shown tasksize : %d\n", tasksize);
+			tasksize += (int)zswap_pool_pages * get_mm_counter(p->mm, MM_SWAPENTS)
+				/ atomic_read(&zswap_stored_pages);
+			lowmem_print(3, "real tasksize : %d\n", tasksize);
+		}
+#endif
 		task_unlock(p);
 		if (tasksize <= 0)
 			continue;
@@ -190,6 +229,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			     free);
 		lowmem_deathpending_timeout = jiffies + HZ;
 		rem += selected_tasksize;
+		lowmem_lmkcount++;
 	}
 
 	lowmem_print(4, "lowmem_scan %lu, %x, return %lu\n",
@@ -209,7 +249,11 @@ static int __init lowmem_init(void)
 	register_shrinker(&lowmem_shrinker);
 	return 0;
 }
-device_initcall(lowmem_init);
+
+static void __exit lowmem_exit(void)
+{
+	unregister_shrinker(&lowmem_shrinker);
+}
 
 #ifdef CONFIG_ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
 static short lowmem_oom_adj_to_oom_score_adj(short oom_adj)
@@ -305,4 +349,9 @@ module_param_array_named(adj, lowmem_adj, short, &lowmem_adj_size,
 module_param_array_named(minfree, lowmem_minfree, uint, &lowmem_minfree_size,
 			 S_IRUGO | S_IWUSR);
 module_param_named(debug_level, lowmem_debug_level, uint, S_IRUGO | S_IWUSR);
+module_param_named(lmkcount, lowmem_lmkcount, uint, S_IRUGO);
 
+module_init(lowmem_init);
+module_exit(lowmem_exit);
+
+MODULE_LICENSE("GPL");

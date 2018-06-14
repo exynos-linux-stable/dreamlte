@@ -45,6 +45,7 @@
 #include <linux/security.h>
 #include <linux/string.h>
 #include <linux/list.h>
+#include <linux/android_aid.h>
 #include "multiuser.h"
 
 /* the file system name */
@@ -139,6 +140,30 @@ typedef enum {
 	PERM_ANDROID_PACKAGE,
 	/* This node is "/Android/[data|media|obb]/[package]/cache" */
 	PERM_ANDROID_PACKAGE_CACHE,
+	/*
+	 * The knox directory has different uses depending on whether it's
+	 * used for external storage or secondary storage.
+	 *
+	 * 1. external storage
+	 * It's used for Andorid For Work(AFW) to provide SDP feature.
+	 * /mnt/shell/enc_emulated/10 will be bind mounted on it.
+	 *
+	 * 2. Secondary storage(external SD Card)
+	 * Knox doesn't encrypt files in secondary storage. Instead,
+	 * it restricts access to Knox files by DAC.
+	 */
+	/* This node is /knox */
+	PERM_KNOX_PRE_ROOT,
+	/* This node is /knox/[userid] */
+	PERM_KNOX_ROOT,
+	/* This node is /knox/[userid]/Android */
+	PERM_KNOX_ANDROID,
+	/* This node is /knox/[userid]/Android/[data|shared] */
+	PERM_KNOX_ANDROID_DATA,
+	PERM_KNOX_ANDROID_SHARED,
+	/* This node is /knox/[userid]/Android/[data|shared]/[package] */
+	PERM_KNOX_ANDROID_PACKAGE,
+
 } perm_t;
 
 struct sdcardfs_sb_info;
@@ -192,6 +217,8 @@ struct sdcardfs_inode_data {
 	bool under_android;
 	bool under_cache;
 	bool under_obb;
+
+	bool under_knox;
 };
 
 /* sdcardfs inode data in memory */
@@ -416,6 +443,22 @@ static inline int get_gid(struct vfsmount *mnt,
 {
 	struct sdcardfs_vfsmount_options *opts = mnt->data;
 
+	if (data->under_knox) {
+		switch (data->perm) {
+		case PERM_KNOX_PRE_ROOT:
+			return AID_SDCARD_R;
+		case PERM_KNOX_ROOT:
+		case PERM_KNOX_ANDROID:
+		case PERM_KNOX_ANDROID_DATA:
+		case PERM_KNOX_ANDROID_PACKAGE:
+			return multiuser_get_uid(data->userid, AID_SDCARD_R);
+		case PERM_KNOX_ANDROID_SHARED:
+			return AID_SDCARD_RW;
+		default:
+			break;
+		}
+	}
+
 	if (opts->gid == AID_SDCARD_RW)
 		/* As an optimization, certain trusted system components only run
 		 * as owner but operate across all users. Since we're now handing
@@ -452,6 +495,8 @@ static inline int get_mode(struct vfsmount *mnt,
 			visible_mode = visible_mode & ~0006;
 		else
 			visible_mode = visible_mode & ~0007;
+	} else if (data->perm == PERM_KNOX_ANDROID_PACKAGE) {
+		visible_mode = visible_mode & ~0006;
 	}
 	owner_mode = info->lower_inode->i_mode & 0700;
 	filtered_mode = visible_mode & (owner_mode | (owner_mode >> 3) | (owner_mode >> 6));
@@ -590,6 +635,12 @@ static inline int check_min_free_space(struct dentry *dentry, size_t size, int d
 	struct kstatfs statfs;
 	u64 avail;
 	struct sdcardfs_sb_info *sbi = SDCARDFS_SB(dentry->d_sb);
+
+	if (uid_eq(GLOBAL_ROOT_UID, current_fsuid()) ||
+			capable(CAP_SYS_RESOURCE) ||
+			in_group_p(AID_USE_ROOT_RESERVED) ||
+			in_group_p(AID_USE_SEC_RESERVED))
+		return 1;
 
 	if (sbi->options.reserved_mb) {
 		/* Get fs stat of lower filesystem. */
