@@ -126,4 +126,119 @@ config ARCH_ZYNQMP
 	help
 	  This enables support for Xilinx ZynqMP Family
 
+menu "Samsung Exynos"
+config ARCH_EXYNOS
+	bool
+
+config SOC_EXYNOS8890
+	bool "Samsung EXYNOS8890"
+	select SOC_SAMSUNG
+	select ARCH_EXYNOS
+	select ARCH_HAS_CPUFREQ
+	select HAVE_S3C2410_I2C if I2C
+	select HAVE_S3C2410_WATCHDOG if WATCHDOG
+	select HAVE_S3C_RTC if RTC_CLASS
+	select ARCH_SUPPORTS_MSI
+	select ARM_AMBA
+	select CLKSRC_OF
+	select USE_OF
+	select COMMON_CLK_SAMSUNG
+	select CLKSRC_EXYNOS_MCT
+	select PINCTRL
+	select SAMSUNG_DMADEV
+
+config SOC_EXYNOS8895
+	bool "Samsung EXYNOS8895"
+	select SOC_SAMSUNG
+	select ARCH_EXYNOS
+	select ARCH_HAS_CPUFREQ
+	select HAVE_S3C2410_I2C if I2C
+	select HAVE_S3C2410_WATCHDOG if WATCHDOG
+	select HAVE_S3C_RTC if RTC_CLASS
+	select ARCH_SUPPORTS_MSI
+	select ARM_AMBA
+	select CLKSRC_OF
+	select USE_OF
+	select COMMON_CLK_SAMSUNG
+	select CLKSRC_EXYNOS_MCT
+	select PINCTRL
+	select SAMSUNG_DMADEV
+
+config SOC_EMULATOR8895
+	bool "Samsung EMULATOR8895"
+
+config SOC_EXYNOS8895_ANDROID_VERSION_O
+	bool "Samsung EXYNOS8895 Android version O"
+	help
+	 This enables support for Android version O of EXYNOS8895
+
+config MODEL_DREAMLTE
+	bool "Samsung Galaxy S8"
+	depends on SOC_EXYNOS8895
+
+config MODEL_DREAM2LTE
+	bool "Samsung Galaxy S8 Plus"
+	depends on SOC_EXYNOS8895
+
+config ARCH_EXYNOS8
+	bool "ARMv8 based Samsung Exynos8"
+	select HAVE_ARM_SCU if SMP
+	select HAVE_SMP
+	help
+	  Samsung EXYNOS8 (Mongoose/A53) SoC based systems
+
+menuconfig EXYNOS_DTBTOOL
+	bool "Build dtbtool for Exynos"
+	select DTC
+	default n
+	help
+	  Say Y here to build the dtbtool for Exynos,
+	  which is necessary to create DTB images for
+	  use in Exynos boot images.
+
+if EXYNOS_DTBTOOL
+
+config EXYNOS_DTBH_PLATFORM_CODE
+	hex "Exynos DTBH hex platform code"
+	default 0x50a6
+	help
+	  This value is verified by the bootloader
+	  to determine if the DTB image is valid for
+	  the device that the kernel is booting on.
+
+config EXYNOS_DTBH_SUBTYPE_CODE
+	hex "Exynos DTBH hex subtype code"
+	default 0x217584da
+	help
+	  This value is verified by the bootloader
+	  to determine if the DTB image is valid for
+	  the device that the kernel is booting on.
+
+config EXYNOS_DTBH_PAGE_SIZE
+	int "Exynos DTBH page size"
+	range 2048 131072
+	default 2048
+	help
+	  Page size used to pad the DTB image.
+	  It should be equal to the page size of
+	  the Exynos boot image.
+	  Must be divisible by 2048.
+
+endif
+
+config ZONE_MOVABLE
+	bool "Enable Zone Movable"
+	default n
+
+config ZONE_MOVABLE_SIZE_MBYTES
+	int "ZONE_MOVABLE Size in MBytes"
+	range 0 1024
+	default 0
+	depends on ZONE_MOVABLE
+	help
+	  Set Movable Zone size based on bits shift value. Movable Zone size
+	  must be less than the highest populated zone.
+
+endmenu
+
 endmenu

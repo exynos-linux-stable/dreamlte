@@ -481,6 +481,7 @@ static int get_v4l2_buffer32(struct v4l2_buffer __user *kp,
 {
 	u32 type;
 	u32 length;
+	u32 reserved;
 	enum v4l2_memory memory;
 	struct v4l2_plane32 __user *uplane32;
 	struct v4l2_plane __user *uplane;
@@ -495,7 +496,9 @@ static int get_v4l2_buffer32(struct v4l2_buffer __user *kp,
 	    get_user(memory, &up->memory) ||
 	    put_user(memory, &kp->memory) ||
 	    get_user(length, &up->length) ||
-	    put_user(length, &kp->length))
+	    put_user(length, &kp->length) ||
+	    get_user(reserved, &up->reserved) ||
+	    put_user(reserved, &kp->reserved))
 		return -EFAULT;
 
 	if (V4L2_TYPE_IS_OUTPUT(type))
@@ -504,7 +507,11 @@ static int get_v4l2_buffer32(struct v4l2_buffer __user *kp,
 		    assign_in_user(&kp->timestamp.tv_sec,
 				   &up->timestamp.tv_sec) ||
 		    assign_in_user(&kp->timestamp.tv_usec,
-				   &up->timestamp.tv_usec))
+				   &up->timestamp.tv_usec) ||
+		    copy_from_user(&kp->timecode, &up->timecode, sizeof(struct v4l2_timecode)) ||
+		    assign_in_user(&kp->sequence, &up->sequence) ||
+		    assign_in_user(&kp->reserved2, &up->reserved2))
+
 			return -EFAULT;
 
 	if (V4L2_TYPE_IS_MULTIPLANAR(type)) {
@@ -864,7 +871,7 @@ static int put_v4l2_ext_controls32(struct file *file,
 	    get_user(kcontrols, &kp->controls))
 		return -EFAULT;
 
-	if (!count)
+	if (!count || count > (U32_MAX/sizeof(*ucontrols)))
 		return 0;
 	if (get_user(p, &up->controls))
 		return -EFAULT;

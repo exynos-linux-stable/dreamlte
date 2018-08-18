@@ -241,7 +241,7 @@ static struct dentry *aio_mount(struct file_system_type *fs_type,
 		.d_dname	= simple_dname,
 	};
 	struct dentry *root = mount_pseudo(fs_type, "aio:", NULL, &ops,
-					   AIO_RING_MAGIC);
+						AIO_RING_MAGIC);
 
 	if (!IS_ERR(root))
 		root->d_sb->s_iflags |= SB_I_NOEXEC;
@@ -628,9 +628,8 @@ static void free_ioctx_users(struct percpu_ref *ref)
 	while (!list_empty(&ctx->active_reqs)) {
 		req = list_first_entry(&ctx->active_reqs,
 				       struct aio_kiocb, ki_list);
-
-		list_del_init(&req->ki_list);
 		kiocb_cancel(req);
+		list_del_init(&req->ki_list);
 	}
 
 	spin_unlock_irq(&ctx->ctx_lock);
@@ -1066,8 +1065,8 @@ static struct kioctx *lookup_ioctx(unsigned long ctx_id)
 
 	ctx = rcu_dereference(table->table[id]);
 	if (ctx && ctx->user_id == ctx_id) {
-		percpu_ref_get(&ctx->users);
-		ret = ctx;
+		if (percpu_ref_tryget_live(&ctx->users))
+			ret = ctx;
 	}
 out:
 	rcu_read_unlock();

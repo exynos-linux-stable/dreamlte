@@ -676,6 +676,7 @@ find_check_entry(struct ip6t_entry *e, struct net *net, const char *name,
 		return -ENOMEM;
 
 	j = 0;
+	memset(&mtpar, 0, sizeof(mtpar));
 	mtpar.net	= net;
 	mtpar.table     = name;
 	mtpar.entryinfo = &e->ipv6;
@@ -848,8 +849,9 @@ translate_table(struct net *net, struct xt_table_info *newinfo, void *entry0,
 			offsets[i] = (void *)iter - entry0;
 		++i;
 		if (strcmp(ip6t_get_target(iter)->u.user.name,
-		    XT_ERROR_TARGET) == 0)
+		    XT_ERROR_TARGET) == 0) {
 			++newinfo->stacksize;
+		}
 	}
 
 	ret = -EINVAL;

@@ -425,6 +425,8 @@ err_data:
 static void dapm_kcontrol_free(struct snd_kcontrol *kctl)
 {
 	struct dapm_kcontrol_data *data = snd_kcontrol_chip(kctl);
+
+	list_del(&data->paths);
 	kfree(data->wlist);
 	kfree(data);
 }
@@ -1145,6 +1147,18 @@ static int is_connected_input_ep(struct snd_soc_dapm_widget *widget,
 {
 	return is_connected_ep(widget, list, SND_SOC_DAPM_DIR_IN,
 			is_connected_input_ep);
+}
+
+int snd_soc_dapm_connected_output_ep(struct snd_soc_dapm_widget *widget,
+	struct list_head *list)
+{
+	return is_connected_output_ep(widget, list);
+}
+
+int snd_soc_dapm_connected_input_ep(struct snd_soc_dapm_widget *widget,
+	struct list_head *list)
+{
+	return is_connected_input_ep(widget, list);
 }
 
 /**

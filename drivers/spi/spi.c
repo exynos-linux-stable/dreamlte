@@ -707,8 +707,14 @@ static int spi_map_buf(struct spi_master *master, struct device *dev,
 	for (i = 0; i < sgs; i++) {
 
 		if (vmalloced_buf) {
-			min = min_t(size_t,
-				    len, desc_len - offset_in_page(buf));
+			/*
+			 * Next scatterlist entry size is the minimum between
+			 * the desc_len and the remaining buffer length that
+			 * fits in a page.
+			 */
+			min = min_t(size_t, desc_len,
+				    min_t(size_t, len,
+					  PAGE_SIZE - offset_in_page(buf)));
 			vm_page = vmalloc_to_page(buf);
 			if (!vm_page) {
 				sg_free_table(sgt);
@@ -1127,10 +1133,14 @@ static void __spi_pump_messages(struct spi_master *master, bool in_kthread)
 		ret = master->prepare_transfer_hardware(master);
 		if (ret) {
 			dev_err(&master->dev,
-				"failed to prepare transfer hardware\n");
+				"failed to prepare transfer hardware: %d\n",
+				ret);
 
 			if (master->auto_runtime_pm)
 				pm_runtime_put(master->dev.parent);
+
+			master->cur_msg->status = ret;
+			spi_finalize_current_message(master);
 			return;
 		}
 	}
@@ -1156,7 +1166,9 @@ static void __spi_pump_messages(struct spi_master *master, bool in_kthread)
 		return;
 	}
 
+	exynos_ss_spi(master, master->cur_msg, ESS_FLAG_IN);
 	ret = master->transfer_one_message(master, master->cur_msg);
+	exynos_ss_spi(master, master->cur_msg, ESS_FLAG_OUT);
 	if (ret) {
 		dev_err(&master->dev,
 			"failed to transfer one message from queue\n");
