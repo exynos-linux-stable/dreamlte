@@ -1,5 +1,5 @@
 /*
- * Fundamental constants relating to 802.3
+ * Bad AP Manager for ADPS
  *
  * Copyright (C) 1999-2018, Broadcom Corporation
  * 
@@ -24,32 +24,32 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: 802.3.h 700076 2017-05-17 14:42:22Z $
+ * $Id: wl_bam.h 763128 2018-05-17 08:38:35Z $
  */
+#ifndef _WL_BAM_H_
+#define _WL_BAM_H_
+#include <typedefs.h>
+#include <linux/kernel.h>
+#include <linux/netdevice.h>
 
-#ifndef _802_3_h_
-#define _802_3_h_
+#include <wl_cfgp2p.h>
 
-/* This marks the start of a packed structure section. */
-#include <packed_section_start.h>
+typedef struct wl_bad_ap_mngr {
+	uint32 num;
+	spinlock_t lock;
+	struct mutex fs_lock;		/* lock for bad ap file list */
+	struct list_head list;
 
-#define SNAP_HDR_LEN	6	/* 802.3 SNAP header length */
-#define DOT3_OUI_LEN	3	/* 802.3 oui length */
+	wl_event_adps_bad_ap_t data;
+} wl_bad_ap_mngr_t;
 
-BWL_PRE_PACKED_STRUCT struct dot3_mac_llc_snap_header {
-	uint8	ether_dhost[ETHER_ADDR_LEN];	/* dest mac */
-	uint8	ether_shost[ETHER_ADDR_LEN];	/* src mac */
-	uint16	length;				/* frame length incl header */
-	uint8	dsap;				/* always 0xAA */
-	uint8	ssap;				/* always 0xAA */
-	uint8	ctl;				/* always 0x03 */
-	uint8	oui[DOT3_OUI_LEN];		/* RFC1042: 0x00 0x00 0x00
-						 * Bridge-Tunnel: 0x00 0x00 0xF8
-						 */
-	uint16	type;				/* ethertype */
-} BWL_POST_PACKED_STRUCT;
+void wl_bad_ap_mngr_init(struct bcm_cfg80211 *cfg);
+void wl_bad_ap_mngr_deinit(struct bcm_cfg80211 *cfg);
 
-/* This marks the end of a packed structure section. */
-#include <packed_section_end.h>
+bool wl_adps_bad_ap_check(struct bcm_cfg80211 *cfg, const struct ether_addr *bssid);
+int wl_adps_enabled(struct bcm_cfg80211 *cfg, struct net_device *ndev);
+int wl_adps_set_suspend(struct bcm_cfg80211 *cfg, struct net_device *ndev, uint8 suspend);
 
-#endif	/* #ifndef _802_3_h_ */
+s32 wl_adps_event_handler(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
+	const wl_event_msg_t *e, void *data);
+#endif  /* _WL_BAM_H_ */
