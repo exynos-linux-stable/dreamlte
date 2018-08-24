@@ -138,6 +138,7 @@ unsigned long long sysctl_tcp_cltcp_ifdevs __read_mostly;
 #define FLAG_FORWARD_PROGRESS	(FLAG_ACKED|FLAG_DATA_SACKED)
 #endif
 
+#define FLAG_NO_CHALLENGE_ACK	0x8000 /* do not call tcp_send_challenge_ack()	*/
 #define TCP_REMNANT (TCP_FLAG_FIN|TCP_FLAG_URG|TCP_FLAG_SYN|TCP_FLAG_PSH)
 #define TCP_HP_BITS (~(TCP_RESERVED_BITS|TCP_FLAG_PSH))
 
@@ -159,7 +160,7 @@ static int cltcp_piecelinear_logbdp (struct tcp_sock *);
 #define CLTCP_RTT_MIN_INITIAL_VAL 86400000
 #define CLT(n) n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n
 
-static const s8 CltcpLogTable[256] = 
+static const s8 CltcpLogTable[256] =
 {
     -1, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3,
     CLT(4), CLT(5), CLT(5), CLT(6), CLT(6), CLT(6), CLT(6),
@@ -190,10 +191,10 @@ static void cltcp_init_buffer_space(struct sock *sk)
 {
 	struct inet_sock *inet = inet_sk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct net_device *dev_out = __ip_dev_find(sock_net(sk), 
+	struct net_device *dev_out = __ip_dev_find(sock_net(sk),
 			inet->inet_saddr, false);
 	int ifindex;
-	
+
 	if (!CLTCP_DEF_ENABLE || !dev_out)
 		return;
 
@@ -285,27 +286,27 @@ static void tcp_measure_rcv_mss(struct sock *sk, const struct sk_buff *skb)
 	}
 }
 
-static void tcp_incr_quickack(struct sock *sk)
+static void tcp_incr_quickack(struct sock *sk, unsigned int max_quickacks)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	unsigned int quickacks = tcp_sk(sk)->rcv_wnd / (2 * icsk->icsk_ack.rcv_mss);
 
 	if (quickacks == 0)
 		quickacks = 2;
+	quickacks = min(quickacks, max_quickacks);
 	if (quickacks > icsk->icsk_ack.quick)
-		icsk->icsk_ack.quick = min(quickacks, TCP_MAX_QUICKACKS);
+		icsk->icsk_ack.quick = quickacks;
 }
 
-#ifndef CONFIG_MPTCP
-static 
-#endif
-void tcp_enter_quickack_mode(struct sock *sk)
+void tcp_enter_quickack_mode(struct sock *sk, unsigned int max_quickacks)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	tcp_incr_quickack(sk);
+
+	tcp_incr_quickack(sk, max_quickacks);
 	icsk->icsk_ack.pingpong = 0;
 	icsk->icsk_ack.ato = TCP_ATO_MIN;
 }
+EXPORT_SYMBOL(tcp_enter_quickack_mode);
 
 /* Send ACKs quickly, if "quick" count is not exhausted
  * and the session is not interactive.
@@ -337,8 +338,10 @@ static void tcp_ecn_withdraw_cwr(struct tcp_sock *tp)
 	tp->ecn_flags &= ~TCP_ECN_DEMAND_CWR;
 }
 
-static void __tcp_ecn_check_ce(struct tcp_sock *tp, const struct sk_buff *skb)
+static void __tcp_ecn_check_ce(struct sock *sk, const struct sk_buff *skb)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
+
 	switch (TCP_SKB_CB(skb)->ip_dsfield & INET_ECN_MASK) {
 	case INET_ECN_NOT_ECT:
 		/* Funny extension: if ECT is not set on a segment,
@@ -346,31 +349,31 @@ static void __tcp_ecn_check_ce(struct tcp_sock *tp, const struct sk_buff *skb)
 		 * it is probably a retransmit.
 		 */
 		if (tp->ecn_flags & TCP_ECN_SEEN)
-			tcp_enter_quickack_mode((struct sock *)tp);
+			tcp_enter_quickack_mode(sk, 2);
 		break;
 	case INET_ECN_CE:
-		if (tcp_ca_needs_ecn((struct sock *)tp))
-			tcp_ca_event((struct sock *)tp, CA_EVENT_ECN_IS_CE);
+		if (tcp_ca_needs_ecn(sk))
+			tcp_ca_event(sk, CA_EVENT_ECN_IS_CE);
 
 		if (!(tp->ecn_flags & TCP_ECN_DEMAND_CWR)) {
 			/* Better not delay acks, sender can have a very low cwnd */
-			tcp_enter_quickack_mode((struct sock *)tp);
+			tcp_enter_quickack_mode(sk, 2);
 			tp->ecn_flags |= TCP_ECN_DEMAND_CWR;
 		}
 		tp->ecn_flags |= TCP_ECN_SEEN;
 		break;
 	default:
-		if (tcp_ca_needs_ecn((struct sock *)tp))
-			tcp_ca_event((struct sock *)tp, CA_EVENT_ECN_NO_CE);
+		if (tcp_ca_needs_ecn(sk))
+			tcp_ca_event(sk, CA_EVENT_ECN_NO_CE);
 		tp->ecn_flags |= TCP_ECN_SEEN;
 		break;
 	}
 }
 
-static void tcp_ecn_check_ce(struct tcp_sock *tp, const struct sk_buff *skb)
+static void tcp_ecn_check_ce(struct sock *sk, const struct sk_buff *skb)
 {
-	if (tp->ecn_flags & TCP_ECN_OK)
-		__tcp_ecn_check_ce(tp, skb);
+	if (tcp_sk(sk)->ecn_flags & TCP_ECN_OK)
+		__tcp_ecn_check_ce(sk, skb);
 }
 
 static void tcp_ecn_rcv_synack(struct tcp_sock *tp, const struct tcphdr *th)
@@ -432,7 +435,7 @@ static void tcp_sndbuf_expand(struct sock *sk)
 
 	/* MPTCP: after this sndmem is the new contribution of the
 	 * current subflow to the aggregated sndbuf */
-	if (sk->sk_sndbuf < sndmem) 
+	if (sk->sk_sndbuf < sndmem)
 #ifdef CONFIG_MPTCP
 	{
 		int old_sndbuf = sk->sk_sndbuf;
@@ -657,14 +660,14 @@ EXPORT_SYMBOL(tcp_initialize_rcv_mss);
 static void cltcp_net_status_estimator(struct tcp_sock *tp)
 {
 	u32 cltcp_rttdiff = 0;
-			
+
 	if (tp->cltcp_rtt_min > tp->rcv_rtt_est.rtt)
 		tp->cltcp_rtt_min = tp->rcv_rtt_est.rtt;
 
 	if (tp->cltcp_srtt != 0) {
 		tp->cltcp_srtt -= cltcp_rtt_avg(tp);
 		tp->cltcp_srtt += tp->rcv_rtt_est.rtt;
-		
+
 		if (tp->rcv_rtt_est.rtt >= cltcp_rtt_avg(tp))
 			cltcp_rttdiff = tp->rcv_rtt_est.rtt - cltcp_rtt_avg(tp);
 		else
@@ -734,7 +737,7 @@ static void tcp_rcv_rtt_update(struct tcp_sock *tp, u32 sample, int win_dep)
 		tp->rcv_rtt_est.rtt = new_sample;
 #ifdef CONFIG_CLTCP
 	if (cltcp(tp))
-		cltcp_net_status_estimator(tp);	
+		cltcp_net_status_estimator(tp);
 #endif
 
 }
@@ -763,13 +766,13 @@ static inline void tcp_rcv_rtt_measure_ts(struct sock *sk,
 }
 
 #ifdef CONFIG_CLTCP
-static int cltcp_int_ln(u32 v) 
+static int cltcp_int_ln(u32 v)
 {
 	u32 r, t, tt;
 
 	if ((tt = v >> 16))
 		r = ((t = tt >> 8) ? 24 + CltcpLogTable[t] : 16 + CltcpLogTable[tt]);
-	else 
+	else
 		r = ((t = v >> 8) ? 8 + CltcpLogTable[t] : CltcpLogTable[v]);
 
 	return r;
@@ -796,7 +799,7 @@ static int cltcp_piecelinear_logbdp(struct tcp_sock *tp)
 {
 	int intlog_lower, intlog_upper, s, i, delta;
 	u32 rtt_low, rtt_high;
-	
+
 	s = i = 0;
 	while (s < tp->cltcp_rtt_min) {
 		i++;
@@ -842,37 +845,37 @@ static void cltcp_rwnd_max_adjustment(struct tcp_sock *tp)
 		if (tp->cltcp_rmem_max_curbdp[0] != tp->cltcp_rmem_max_curbdp[1])
 			tp->cltcp_rwnd_max_adjust = 0;
 
-		cltcp_debug("%s saddr/sport = %08X/%d\n", __func__, 
+		cltcp_debug("%s saddr/sport = %08X/%d\n", __func__,
 			ntohl(tp->inet_conn.icsk_inet.inet_saddr),
 			ntohs(tp->inet_conn.icsk_inet.inet_sport));
-		cltcp_debug("%s daddr/dport = %08X/%d\n", __func__, 
+		cltcp_debug("%s daddr/dport = %08X/%d\n", __func__,
 			ntohl(tp->inet_conn.icsk_inet.inet_daddr),
 			ntohs(tp->inet_conn.icsk_inet.inet_dport));
-		cltcp_debug("%s cltcp_max_tput = %d, cltcp_rtt_min = %d, cltcp_srtt = %d, cltcp_rttvar = %u\n", 
-			__func__, tp->cltcp_max_tput, tp->cltcp_rtt_min, cltcp_rtt_avg(tp), cltcp_rttvar_avg(tp)); 
+		cltcp_debug("%s cltcp_max_tput = %d, cltcp_rtt_min = %d, cltcp_srtt = %d, cltcp_rttvar = %u\n",
+			__func__, tp->cltcp_max_tput, tp->cltcp_rtt_min, cltcp_rtt_avg(tp), cltcp_rttvar_avg(tp));
 
 		tp->cltcp_tcp_rmem_max_base = tcp_space_from_win(tp->cltcp_rmem_max_curbdp[0]);
 
-		cltcp_debug("%s calculated cltcp_tcp_rmem_max_base = %d\n", 
-			__func__, tp->cltcp_tcp_rmem_max_base); 
+		cltcp_debug("%s calculated cltcp_tcp_rmem_max_base = %d\n",
+			__func__, tp->cltcp_tcp_rmem_max_base);
 
 		if (tp->cltcp_tcp_rmem_max_base > CLTCP_DEF_UB)
 			tp->cltcp_tcp_rmem_max_base = CLTCP_DEF_UB;
 		else if (tp->cltcp_tcp_rmem_max_base < CLTCP_DEF_LB)
 			tp->cltcp_tcp_rmem_max_base = CLTCP_DEF_LB;
 
-		if (tp->cltcp_rwnd_max_adjust == 0) 
+		if (tp->cltcp_rwnd_max_adjust == 0)
 			tp->cltcp_tcp_rmem_max = tp->cltcp_tcp_rmem_max_base;
 	}
 
 	/*
-	 * Dynamic RWND increase 
+	 * Dynamic RWND increase
 	 */
-	if (CLTCP_DEF_INC && tp->cltcp_rtt_min != CLTCP_RTT_MIN_INITIAL_VAL && 
+	if (CLTCP_DEF_INC && tp->cltcp_rtt_min != CLTCP_RTT_MIN_INITIAL_VAL &&
 		tp->cltcp_cwnd_est > tcp_win_from_space(tp->cltcp_tcp_rmem_max) - 100 * tp->advmss &&
 		cltcp_rtt_avg(tp) - tp->cltcp_rtt_min < CLTCP_DEF_INC_TH * cltcp_rttvar_avg(tp)) {
-		
-		/* increasing size calculation */		
+
+		/* increasing size calculation */
 		cltcp_increase_rwnd_max(tp);
 
 		if (tp->cltcp_tcp_rmem_max > CLTCP_DEF_UB)
@@ -880,13 +883,13 @@ static void cltcp_rwnd_max_adjustment(struct tcp_sock *tp)
 
 		tp->cltcp_rwnd_max_adjust = 1;
 
-		cltcp_debug("%s cltcp_tcp_rmem_max increased = %d, cltcp_cwnd_est = %d\n", 
+		cltcp_debug("%s cltcp_tcp_rmem_max increased = %d, cltcp_cwnd_est = %d\n",
 			__func__, tp->cltcp_tcp_rmem_max, tp->cltcp_cwnd_est);
 	} else if (CLTCP_DEF_DEC &&
-		tp->cltcp_rwnd_max_adjust == 0 && 
-		tp->cltcp_rtt_min != CLTCP_RTT_MIN_INITIAL_VAL && 
+		tp->cltcp_rwnd_max_adjust == 0 &&
+		tp->cltcp_rtt_min != CLTCP_RTT_MIN_INITIAL_VAL &&
 		cltcp_rtt_avg(tp) - tp->cltcp_rtt_min > CLTCP_DEF_DEC_TH * cltcp_rttvar_avg(tp)) {
-		
+
 		/* decreasing size calculation */
 		cltcp_decrease_rwnd_max(tp);
 
@@ -913,8 +916,8 @@ static void cltcp_rwnd_max_adjustment(struct tcp_sock *tp)
 void tcp_rcv_space_adjust(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	u32 copied;
 	int time;
-	int copied;
 
 	time = tcp_time_stamp - tp->rcvq_space.time;
 #ifdef CONFIG_MPTCP
@@ -936,13 +939,13 @@ void tcp_rcv_space_adjust(struct sock *sk)
 		else
 			tp->cltcp_cwnd_est = (7 * tp->cltcp_cwnd_est + copied) / 8;
 
-		cltcp_debug("%s cwnd_est = %d\n", __func__, 
+		cltcp_debug("%s cwnd_est = %d\n", __func__,
 				tp->cltcp_cwnd_est);
 
-		if (copied <= tp->rcvq_space.space && 
+		if (copied <= tp->rcvq_space.space &&
 			tp->cltcp_max_tput == sysctl_tcp_cltcp[3])
 			goto new_measure;
-	} else 
+	} else
 #endif
 	if (copied <= tp->rcvq_space.space)
 		goto new_measure;
@@ -958,12 +961,13 @@ void tcp_rcv_space_adjust(struct sock *sk)
 
 	if (sysctl_tcp_moderate_rcvbuf &&
 	    !(sk->sk_userlocks & SOCK_RCVBUF_LOCK)) {
-		int rcvwin, rcvmem, rcvbuf;
+		int rcvmem, rcvbuf;
+		u64 rcvwin;
 
 		/* minimal window to cope with packet losses, assuming
 		 * steady state. Add some cushion because of small variations.
 		 */
-		rcvwin = (copied << 1) + 16 * tp->advmss;
+		rcvwin = ((u64)copied << 1) + 16 * tp->advmss;
 
 		/* If rate increased by 25%,
 		 *	assume slow start, rcvwin = 3 * copied
@@ -986,12 +990,14 @@ void tcp_rcv_space_adjust(struct sock *sk)
 #ifdef CONFIG_CLTCP
 		if (cltcp(tp)) {
 			cltcp_rwnd_max_adjustment(tp);
-			
-			rcvbuf = min(rcvwin / tp->advmss * rcvmem, cltcp_rmem_max(tp));
-		} else 
+
+			do_div(rcvwin, tp->advmss);
+			rcvbuf = min_t(u64, rcvwin * rcvmem, cltcp_rmem_max(tp));
+		} else
 #endif
-		rcvbuf = min(rcvwin / tp->advmss * rcvmem, sysctl_tcp_rmem[2]);
-		
+		do_div(rcvwin, tp->advmss);
+		rcvbuf = min_t(u64, rcvwin * rcvmem, sysctl_tcp_rmem[2]);
+
 #ifdef CONFIG_CLTCP
 		cltcp_debug("%s final rcvbuf %d\n", __func__, rcvbuf);
 #endif
@@ -999,7 +1005,7 @@ void tcp_rcv_space_adjust(struct sock *sk)
 			sk->sk_rcvbuf = rcvbuf;
 
 			/* Make the window clamp follow along.  */
-			tp->window_clamp = rcvwin;
+			tp->window_clamp = tcp_win_from_space(rcvbuf);
 		}
 #ifdef CONFIG_CLTCP
 		else if (cltcp(tp) && cltcp_rmem_max(tp) < sk->sk_rcvbuf){
@@ -1044,7 +1050,7 @@ static void tcp_event_data_recv(struct sock *sk, struct sk_buff *skb)
 		/* The _first_ data packet received, initialize
 		 * delayed ACK engine.
 		 */
-		tcp_incr_quickack(sk);
+		tcp_incr_quickack(sk, TCP_MAX_QUICKACKS);
 		icsk->icsk_ack.ato = TCP_ATO_MIN;
 	} else {
 		int m = now - icsk->icsk_ack.lrcvtime;
@@ -1060,13 +1066,13 @@ static void tcp_event_data_recv(struct sock *sk, struct sk_buff *skb)
 			/* Too long gap. Apparently sender failed to
 			 * restart window, so that we send ACKs quickly.
 			 */
-			tcp_incr_quickack(sk);
+			tcp_incr_quickack(sk, TCP_MAX_QUICKACKS);
 			sk_mem_reclaim(sk);
 		}
 	}
 	icsk->icsk_ack.lrcvtime = now;
 
-	tcp_ecn_check_ce(tp, skb);
+	tcp_ecn_check_ce(sk, skb);
 
 	if (skb->len >= 128)
 		tcp_grow_window(sk, skb);
@@ -1192,7 +1198,7 @@ static void tcp_update_pacing_rate(struct sock *sk)
  * routine referred to above.
  */
 #ifndef CONFIG_MPTCP
-static 
+static
 #endif
 void tcp_set_rto(struct sock *sk)
 {
@@ -3467,7 +3473,7 @@ void tcp_resume_early_retransmit(struct sock *sk)
 
 /* If we get here, the whole TSO packet has not been acked. */
 #ifndef CONFIG_MPTCP
-static 
+static
 #endif
 u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb)
 {
@@ -3634,6 +3640,15 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 
 		if (tcp_is_reno(tp)) {
 			tcp_remove_reno_sacks(sk, pkts_acked);
+
+			/* If any of the cumulatively ACKed segments was
+			 * retransmitted, non-SACK case cannot confirm that
+			 * progress was due to original transmission due to
+			 * lack of TCPCB_SACKED_ACKED bits even if some of
+			 * the packets may have been never retransmitted.
+			 */
+			if (flag & FLAG_RETRANS_DATA_ACKED)
+				flag &= ~FLAG_ORIG_SACK_ACKED;
 		} else {
 			int delta;
 
@@ -3687,7 +3702,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 }
 
 #ifndef CONFIG_MPTCP
-static 
+static
 #endif
 void tcp_ack_probe(struct sock *sk)
 {
@@ -3974,7 +3989,8 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 	if (before(ack, prior_snd_una)) {
 		/* RFC 5961 5.2 [Blind Data Injection Attack].[Mitigation] */
 		if (before(ack, prior_snd_una - tp->max_window)) {
-			tcp_send_challenge_ack(sk, skb);
+			if (!(flag & FLAG_NO_CHALLENGE_ACK))
+				tcp_send_challenge_ack(sk, skb);
 			return -1;
 		}
 		goto old_ack;
@@ -4146,10 +4162,10 @@ static void tcp_parse_fastopen_option(int len, const unsigned char *cookie,
  * the fast version below fails.
  */
 void tcp_parse_options(const struct sk_buff *skb,
-		       struct tcp_options_received *opt_rx, 
+		       struct tcp_options_received *opt_rx,
 #ifdef CONFIG_MPTCP
 		       struct mptcp_options_received *mopt,
-#endif		       		   
+#endif
 			   int estab, struct tcp_fastopen_cookie *foc
 #ifdef CONFIG_MPTCP
 				, struct tcp_sock *tp
@@ -4305,7 +4321,7 @@ static bool tcp_fast_parse_options(const struct sk_buff *skb,
 		if (tcp_parse_aligned_timestamp(tp, th))
 			return true;
 	}
-	
+
 #ifdef CONFIG_MPTCP
 	tcp_parse_options(skb, &tp->rx_opt, mptcp(tp) ? &tp->mptcp->rx_opt : NULL,
 			  1, NULL, tp);
@@ -4327,11 +4343,8 @@ const u8 *tcp_parse_md5sig_option(const struct tcphdr *th)
 	int length = (th->doff << 2) - sizeof(*th);
 	const u8 *ptr = (const u8 *)(th + 1);
 
-	/* If the TCP option is too short, we can short cut */
-	if (length < TCPOLEN_MD5SIG)
-		return NULL;
-
-	while (length > 0) {
+	/* If not enough data remaining, we can short cut */
+	while (length >= TCPOLEN_MD5SIG) {
 		int opcode = *ptr++;
 		int opsize;
 
@@ -4480,7 +4493,7 @@ static void tcp_fin(struct sock *sk)
 	case TCP_ESTABLISHED:
 		/* Move to CLOSE_WAIT */
 		tcp_set_state(sk, TCP_CLOSE_WAIT);
-		
+
 #ifdef CONFIG_MPTCP
 		if (mptcp(tp))
 			mptcp_sub_close_passive(sk);
@@ -4608,7 +4621,7 @@ static void tcp_send_dupack(struct sock *sk, const struct sk_buff *skb)
 	if (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq &&
 	    before(TCP_SKB_CB(skb)->seq, tp->rcv_nxt)) {
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_DELAYEDACKLOST);
-		tcp_enter_quickack_mode(sk);
+		tcp_enter_quickack_mode(sk, TCP_MAX_QUICKACKS);
 
 		if (tcp_is_sack(tp) && sysctl_tcp_dsack) {
 			u32 end_seq = TCP_SKB_CB(skb)->end_seq;
@@ -4740,7 +4753,7 @@ static void tcp_sack_remove(struct tcp_sock *tp)
  * Returns true if caller should free @from instead of queueing it
  */
 #ifndef CONFIG_MPTCP
-static 
+static
 #endif
 bool tcp_try_coalesce(struct sock *sk,
 			     struct sk_buff *to,
@@ -4799,7 +4812,7 @@ static void tcp_ofo_queue(struct sock *sk)
 		 */
 		if (!after(TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt)
 #ifdef CONFIG_MPTCP
-		&& !(mptcp(tp) && TCP_SKB_CB(skb)->end_seq == TCP_SKB_CB(skb)->seq) 
+		&& !(mptcp(tp) && TCP_SKB_CB(skb)->end_seq == TCP_SKB_CB(skb)->seq)
 #endif
 			) {
 			SOCK_DEBUG(sk, "ofo packet was already received\n");
@@ -4861,7 +4874,7 @@ static void tcp_data_queue_ofo(struct sock *sk, struct sk_buff *skb)
 	struct sk_buff *skb1;
 	u32 seq, end_seq;
 
-	tcp_ecn_check_ce(tp, skb);
+	tcp_ecn_check_ce(sk, skb);
 
 	if (unlikely(tcp_try_rmem_schedule(sk, skb, skb->truesize))) {
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPOFODROP);
@@ -4998,7 +5011,7 @@ end:
 }
 
 #ifndef CONFIG_MPTCP
-static 
+static
 #endif
 int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int hdrlen,
 		  bool *fragstolen)
@@ -5075,7 +5088,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 
 	/* If no data is present, but a data_fin is in the options, we still
 	 * have to call mptcp_queue_skb later on. */
-	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq 
+	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq
 #ifdef CONFIG_MPTCP
 		&& !(mptcp(tp) && mptcp_is_data_fin(skb))
 #endif
@@ -5172,7 +5185,7 @@ queue_and_out:
 		tcp_dsack_set(sk, TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb)->end_seq);
 
 out_of_window:
-		tcp_enter_quickack_mode(sk);
+		tcp_enter_quickack_mode(sk, TCP_MAX_QUICKACKS);
 		inet_csk_schedule_ack(sk);
 drop:
 		__kfree_skb(skb);
@@ -5182,8 +5195,6 @@ drop:
 	/* Out of window. F.e. zero window probe. */
 	if (!before(TCP_SKB_CB(skb)->seq, tp->rcv_nxt + tcp_receive_window(tp)))
 		goto out_of_window;
-
-	tcp_enter_quickack_mode(sk);
 
 	if (before(TCP_SKB_CB(skb)->seq, tp->rcv_nxt)) {
 		/* Partial packet, seq < rcv_next < end_seq */
@@ -5327,6 +5338,7 @@ restart:
 static void tcp_collapse_ofo_queue(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	u32 range_truesize, sum_tiny = 0;
 	struct sk_buff *skb = skb_peek(&tp->out_of_order_queue);
 	struct sk_buff *head;
 	u32 start, end;
@@ -5336,6 +5348,7 @@ static void tcp_collapse_ofo_queue(struct sock *sk)
 
 	start = TCP_SKB_CB(skb)->seq;
 	end = TCP_SKB_CB(skb)->end_seq;
+	range_truesize = skb->truesize;
 	head = skb;
 
 	for (;;) {
@@ -5350,15 +5363,26 @@ static void tcp_collapse_ofo_queue(struct sock *sk)
 		if (!skb ||
 		    after(TCP_SKB_CB(skb)->seq, end) ||
 		    before(TCP_SKB_CB(skb)->end_seq, start)) {
-			tcp_collapse(sk, &tp->out_of_order_queue,
-				     head, skb, start, end);
+			/* Do not attempt collapsing tiny skbs */
+			if (range_truesize != head->truesize ||
+			    end - start >= SKB_WITH_OVERHEAD(SK_MEM_QUANTUM)) {
+				tcp_collapse(sk, &tp->out_of_order_queue,
+					     head, skb, start, end);
+			} else {
+				sum_tiny += range_truesize;
+				if (sum_tiny > sk->sk_rcvbuf >> 3)
+					return;
+			}
+
 			head = skb;
 			if (!skb)
 				break;
 			/* Start new segment */
 			start = TCP_SKB_CB(skb)->seq;
 			end = TCP_SKB_CB(skb)->end_seq;
+			range_truesize = skb->truesize;
 		} else {
+			range_truesize += skb->truesize;
 			if (before(TCP_SKB_CB(skb)->seq, start))
 				start = TCP_SKB_CB(skb)->seq;
 			if (after(TCP_SKB_CB(skb)->end_seq, end))
@@ -5372,7 +5396,7 @@ static void tcp_collapse_ofo_queue(struct sock *sk)
  * Return true if queue was pruned.
  */
 #ifndef CONFIG_MPTCP
-static 
+static
 #endif
 bool tcp_prune_ofo_queue(struct sock *sk)
 {
@@ -5416,6 +5440,9 @@ static int tcp_prune_queue(struct sock *sk)
 	else if (tcp_under_memory_pressure(sk))
 		tp->rcv_ssthresh = min(tp->rcv_ssthresh, 4U * tp->advmss);
 
+	if (atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf)
+		return 0;
+
 	tcp_collapse_ofo_queue(sk);
 	if (!skb_queue_empty(&sk->sk_receive_queue))
 		tcp_collapse(sk, &sk->sk_receive_queue,
@@ -5429,7 +5456,7 @@ static int tcp_prune_queue(struct sock *sk)
 
 	/* Collapsing did not help, destructive actions follow.
 	 * This must not ever occur. */
-	 
+
 #ifdef CONFIG_MPTCP
 	tp->ops->prune_ofo_queue(sk);
 #endif
@@ -5475,7 +5502,7 @@ void tcp_cwnd_application_limited(struct sock *sk)
 #endif
 
 #ifndef CONFIG_MPTCP
-static 
+static
 #endif
 bool tcp_should_expand_sndbuf(const struct sock *sk)
 {
@@ -5530,7 +5557,7 @@ static void tcp_check_space(struct sock *sk)
 		sock_reset_flag(sk, SOCK_QUEUE_SHRUNK);
 		/* pairs with tcp_poll() */
 		smp_mb();
-		if 
+		if
 #ifdef CONFIG_MPTCP
 			(mptcp(tcp_sk(sk)) ||
 #endif
@@ -6085,10 +6112,6 @@ void tcp_finish_connect(struct sock *sk, struct sk_buff *skb)
 	else
 		tp->pred_flags = 0;
 
-	if (!sock_flag(sk, SOCK_DEAD)) {
-		sk->sk_state_change(sk);
-		sk_wake_async(sk, SOCK_WAKE_IO, POLL_OUT);
-	}
 }
 
 static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
@@ -6164,8 +6187,9 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_fastopen_cookie foc = { .len = -1 };
 	int saved_clamp = tp->rx_opt.mss_clamp;
-	
-	
+	bool fastopen_fail;
+
+
 #ifdef CONFIG_MPTCP
 	struct mptcp_options_received mopt;
 	mptcp_init_mp_opt(&mopt);
@@ -6283,7 +6307,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		} else {
 			tp->tcp_header_len = sizeof(struct tcphdr);
 		}
-		
+
 #ifdef CONFIG_MPTCP
 		if (mptcp(tp)) {
 			tp->tcp_header_len += MPTCP_SUB_LEN_DSM_ALIGN;
@@ -6307,14 +6331,19 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 		tcp_finish_connect(sk, skb);
 
-		if ((tp->syn_fastopen || tp->syn_data) &&
-		    tcp_rcv_fastopen_synack(sk, skb, &foc))
-			return -1;
+		fastopen_fail = (tp->syn_fastopen || tp->syn_data) &&
+				tcp_rcv_fastopen_synack(sk, skb, &foc);
 
+		if (!sock_flag(sk, SOCK_DEAD)) {
+			sk->sk_state_change(sk);
+			sk_wake_async(sk, SOCK_WAKE_IO, POLL_OUT);
+		}
+		if (fastopen_fail)
+			return -1;
 	/* With MPTCP we cannot send data on the third ack due to the
 		 * lack of option-space to combine with an MP_CAPABLE.
 		 */
-		 
+
 		if (
 #ifdef CONFIG_MPTCP
 			!mptcp(tp) && (
@@ -6334,7 +6363,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			 * to stand against the temptation 8)     --ANK
 			 */
 			inet_csk_schedule_ack(sk);
-			tcp_enter_quickack_mode(sk);
+			tcp_enter_quickack_mode(sk, TCP_MAX_QUICKACKS);
 			inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
 						  TCP_DELACK_MAX, TCP_RTO_MAX);
 
@@ -6380,7 +6409,7 @@ discard:
 		} else {
 			tp->tcp_header_len = sizeof(struct tcphdr);
 		}
-		
+
 #ifdef CONFIG_MPTCP
 		if (mptcp(tp)) {
 			tp->tcp_header_len += MPTCP_SUB_LEN_DSM_ALIGN;
@@ -6543,13 +6572,17 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 
 	/* step 5: check the ACK field */
 	acceptable = tcp_ack(sk, skb, FLAG_SLOWPATH |
-				      FLAG_UPDATE_TS_RECENT) > 0;
+				      FLAG_UPDATE_TS_RECENT |
+				      FLAG_NO_CHALLENGE_ACK) > 0;
 
+	if (!acceptable) {
+		if (sk->sk_state == TCP_SYN_RECV)
+			return 1;	/* send one RST */
+		tcp_send_challenge_ack(sk, skb);
+		goto discard;
+	}
 	switch (sk->sk_state) {
 	case TCP_SYN_RECV:
-		if (!acceptable)
-			return 1;
-
 		if (!tp->srtt_us)
 			tcp_synack_rtt_meas(sk, req);
 
@@ -6634,14 +6667,6 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		 * our SYNACK so stop the SYNACK timer.
 		 */
 		if (req) {
-			/* Return RST if ack_seq is invalid.
-			 * Note that RFC793 only says to generate a
-			 * DUPACK for it but for TCP Fast Open it seems
-			 * better to treat this case like TCP_SYN_RECV
-			 * above.
-			 */
-			if (!acceptable)
-				return 1;
 			/* We no longer need the request sock. */
 			reqsk_fastopen_remove(sk, req, false);
 			tcp_rearm_rto(sk);
@@ -6673,7 +6698,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		tmo = tcp_fin_time(sk);
 		if (tmo > TCP_TIMEWAIT_LEN) {
 			inet_csk_reset_keepalive_timer(sk, tmo - TCP_TIMEWAIT_LEN);
-		} else if (th->fin || 
+		} else if (th->fin ||
 #ifdef CONFIG_MPTCP
 		mptcp_is_data_fin(skb) ||
 #endif

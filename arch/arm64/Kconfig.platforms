@@ -90,8 +90,6 @@ config ARCH_TEGRA_132_SOC
 	bool "NVIDIA Tegra132 SoC"
 	depends on ARCH_TEGRA
 	select PINCTRL_TEGRA124
-	select USB_ULPI if USB_PHY
-	select USB_ULPI_VIEWPORT if USB_PHY
 	help
 	  Enable support for NVIDIA Tegra132 SoC, based on the Denver
 	  ARMv8 CPU.  The Tegra132 SoC is similar to the Tegra124 SoC,
@@ -174,12 +172,59 @@ config SOC_EXYNOS8895_ANDROID_VERSION_O
 	help
 	 This enables support for Android version O of EXYNOS8895
 
+config MODEL_DREAMLTE
+	bool "Samsung Galaxy S8"
+	depends on SOC_EXYNOS8895
+
+config MODEL_DREAM2LTE
+	bool "Samsung Galaxy S8 Plus"
+	depends on SOC_EXYNOS8895
+
 config ARCH_EXYNOS8
 	bool "ARMv8 based Samsung Exynos8"
 	select HAVE_ARM_SCU if SMP
 	select HAVE_SMP
 	help
 	  Samsung EXYNOS8 (Mongoose/A53) SoC based systems
+
+menuconfig EXYNOS_DTBTOOL
+	bool "Build dtbtool for Exynos"
+	select DTC
+	default n
+	help
+	  Say Y here to build the dtbtool for Exynos,
+	  which is necessary to create DTB images for
+	  use in Exynos boot images.
+
+if EXYNOS_DTBTOOL
+
+config EXYNOS_DTBH_PLATFORM_CODE
+	hex "Exynos DTBH hex platform code"
+	default 0x50a6
+	help
+	  This value is verified by the bootloader
+	  to determine if the DTB image is valid for
+	  the device that the kernel is booting on.
+
+config EXYNOS_DTBH_SUBTYPE_CODE
+	hex "Exynos DTBH hex subtype code"
+	default 0x217584da
+	help
+	  This value is verified by the bootloader
+	  to determine if the DTB image is valid for
+	  the device that the kernel is booting on.
+
+config EXYNOS_DTBH_PAGE_SIZE
+	int "Exynos DTBH page size"
+	range 2048 131072
+	default 2048
+	help
+	  Page size used to pad the DTB image.
+	  It should be equal to the page size of
+	  the Exynos boot image.
+	  Must be divisible by 2048.
+
+endif
 
 config ZONE_MOVABLE
 	bool "Enable Zone Movable"
