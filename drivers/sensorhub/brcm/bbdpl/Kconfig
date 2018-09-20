@@ -22,3 +22,7 @@ config BCM_GPS_SPI_DRIVER
         Support for BRCM GPS SPI driver.
 
 endchoice
+
+
+
+
