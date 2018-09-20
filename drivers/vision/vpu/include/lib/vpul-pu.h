@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Samsung Exynos SoC series VPU driver
  *
  * Copyright (c) 2016 Samsung Electronics Co., Ltd
