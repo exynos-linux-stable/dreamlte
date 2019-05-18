@@ -42,6 +42,7 @@ static int tcp_syn_retries_min = 1;
 static int tcp_syn_retries_max = MAX_TCP_SYNCNT;
 static int ip_ping_group_range_min[] = { 0, 0 };
 static int ip_ping_group_range_max[] = { GID_T_MAX, GID_T_MAX };
+static int one_day_secs = 24 * 3600;
 static int tcp_delack_seg_min = TCP_DELACK_MIN;
 static int tcp_delack_seg_max = 60;
 static int tcp_use_userconfig_min;
@@ -323,13 +324,13 @@ static int proc_cltcp_ifdevs(struct ctl_table *ctl, int write,
 		rcu_read_lock();
 		dev = dev_get_by_name_rcu(&init_net, ifname);
 		if (dev) {
-			if (dev->ifindex >= 0 && 
+			if (dev->ifindex >= 0 &&
 					dev->ifindex < TCP_CLTCP_IFDEVS_MAX) {
 				sysctl_tcp_cltcp_ifdevs |= (1 << dev->ifindex);
-				pr_info("%s: cltcp: ifdev %s added\n", 
+				pr_info("%s: cltcp: ifdev %s added\n",
 						__func__, ifname);
 			} else {
-				pr_info("%s: cltcp: err! ifindex=%d\n", 
+				pr_info("%s: cltcp: err! ifindex=%d\n",
 						__func__, dev->ifindex);
 			}
 		}
@@ -679,7 +680,9 @@ static struct ctl_table ipv4_table[] = {
 		.data		= &sysctl_tcp_min_rtt_wlen,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one_day_secs
 	},
 	{
 		.procname	= "tcp_low_latency",
@@ -744,16 +747,16 @@ static struct ctl_table ipv4_table[] = {
 		.proc_handler	= proc_dointvec
 	},
 #ifdef CONFIG_CLTCP
-	{	
+	{
 		.procname	= "tcp_cltcp",
-		.data		= &sysctl_tcp_cltcp,	
+		.data		= &sysctl_tcp_cltcp,
 		.maxlen 	= sizeof(sysctl_tcp_cltcp),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec
 	},
-	{	
+	{
 		.procname	= "tcp_cltcp_ifdevs",
-		.data		= &sysctl_tcp_cltcp_ifdevs,	
+		.data		= &sysctl_tcp_cltcp_ifdevs,
 		.maxlen 	= sizeof(sysctl_tcp_cltcp_ifdevs),
 		.mode		= 0644,
 		.proc_handler	= proc_cltcp_ifdevs
