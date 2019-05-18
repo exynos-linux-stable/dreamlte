@@ -3078,9 +3078,6 @@ extern struct buffer_head *ext4_get_first_inline_block(struct inode *inode,
 extern int ext4_inline_data_fiemap(struct inode *inode,
 				   struct fiemap_extent_info *fieinfo,
 				   int *has_inline, __u64 start, __u64 len);
-extern int ext4_try_to_evict_inline_data(handle_t *handle,
-					 struct inode *inode,
-					 int needed);
 extern void ext4_inline_data_truncate(struct inode *inode, int *has_inline);
 
 extern int ext4_convert_inline_data(struct inode *inode);
@@ -3295,14 +3292,9 @@ static inline bool ext4_android_claim_sec_r_blocks(unsigned int flags) {
 }
 
 static inline bool ext4_android_claim_r_blocks(struct ext4_sb_info *sbi) {
-#if ANDROID_VERSION < 90000
+	/* for O upgrade without factory reset */
 	if (in_group_p(AID_USE_ROOT_RESERVED))
 		return true;
-#else
-	/* for P upgrade without factory reset */
-	if (in_group_p(AID_RESERVED_DISK))
-		return true;
-#endif
 	return false;
 }
 
