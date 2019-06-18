@@ -303,6 +303,7 @@ static const struct snmp_mib snmp4_net_list[] = {
 	SNMP_MIB_ITEM("TCPKeepAlive", LINUX_MIB_TCPKEEPALIVE),
 	SNMP_MIB_ITEM("TCPMTUPFail", LINUX_MIB_TCPMTUPFAIL),
 	SNMP_MIB_ITEM("TCPMTUPSuccess", LINUX_MIB_TCPMTUPSUCCESS),
+	SNMP_MIB_ITEM("TCPWqueueTooBig", LINUX_MIB_TCPWQUEUETOOBIG),
 	SNMP_MIB_ITEM("TCPRaceCondInReqsk", LINUX_MIB_TCPRACECNDREQSK),
 	SNMP_MIB_ITEM("TCPRaceCondInReqskDrop", LINUX_MIB_TCPRACECNDREQSKDROP),
 	SNMP_MIB_SENTINEL
@@ -544,4 +545,3 @@ int __init ip_misc_proc_init(void)
 {
 	return register_pernet_subsys(&ip_proc_ops);
 }
-
