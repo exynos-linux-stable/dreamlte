@@ -223,12 +223,16 @@ void __put_cred(struct cred *cred)
 #endif
 	BUG_ON(cred == current->cred);
 	BUG_ON(cred == current->real_cred);
+<<<<<<< HEAD
 #ifdef CONFIG_RKP_KDP
 	if (rkp_ro_page((unsigned long)cred)) {
 		put_ro_cred(cred);
 	} else
 #endif /*CONFIG_RKP_KDP*/
-	call_rcu(&cred->rcu, put_cred_rcu);
+	if (cred->non_rcu)
+		put_cred_rcu(&cred->rcu);
+	else
+		call_rcu(&cred->rcu, put_cred_rcu);
 }
 EXPORT_SYMBOL(__put_cred);
 
@@ -352,6 +356,7 @@ struct cred *prepare_creds(void)
 	old = task->cred;
 	memcpy(new, old, sizeof(struct cred));
 
+	new->non_rcu = 0;
 	atomic_set(&new->usage, 1);
 	set_cred_subscribers(new, 0);
 	get_group_info(new->group_info);
@@ -410,7 +415,7 @@ int rkp_from_tsec_jar(unsigned long addr)
 	static void *objp;
 	static struct kmem_cache *s;
 	static struct page *page;
-	
+
 	objp = (void *)addr;
 
 	if(!objp)
@@ -425,21 +430,21 @@ int rkp_from_tsec_jar(unsigned long addr)
 	}
 	return 0;
 }
-int chk_invalid_kern_ptr(u64 tsec) 
+int chk_invalid_kern_ptr(u64 tsec)
 {
 	return (((u64)tsec >> 36) != (u64)0xFFFFFFC);
 }
 void rkp_free_security(unsigned long tsec)
 {
-	if(!tsec || 
+	if(!tsec ||
 		chk_invalid_kern_ptr(tsec))
 		return;
 
-	if(rkp_ro_page(tsec) && 
+	if(rkp_ro_page(tsec) &&
 		rkp_from_tsec_jar(tsec)){
 		kmem_cache_free(tsec_jar,(void *)tsec);
 	}
-	else { 
+	else {
 		kfree((void *)tsec);
 	}
 }
@@ -539,11 +544,11 @@ int copy_creds(struct task_struct *p, unsigned long clone_flags)
 		tsec = kmem_cache_alloc(tsec_jar, GFP_KERNEL);
 		if(!tsec)
 			panic("copy_creds() : Unable to allocate security pointer\n");
-		
+
 		rkp_cred_fill_params(new,new_ro,use_cnt_ptr,tsec,RKP_CMD_COPY_CREDS,p);
 		rkp_call(RKP_CMDID(0x46),(unsigned long long)&cred_param,0,0,0,0);
-		if((new_ro->bp_task != p) 
-			|| new_ro->security != tsec 
+		if((new_ro->bp_task != p)
+			|| new_ro->security != tsec
 			|| new_ro->use_cnt != use_cnt_ptr) {
 			panic("Copy Creds: RKP Call failed task=#%p:%p#, sec=#%p:%p#, usecnt=#%p:%p#",new_ro->bp_task,p,new_ro->security,tsec,new_ro->use_cnt,use_cnt_ptr);
 		}
@@ -661,6 +666,15 @@ int commit_creds(struct cred *new)
 		if (task->mm)
 			set_dumpable(task->mm, suid_dumpable);
 		task->pdeath_signal = 0;
+		/*
+		 * If a task drops privileges and becomes nondumpable,
+		 * the dumpability change must become visible before
+		 * the credential change; otherwise, a __ptrace_may_access()
+		 * racing with this change may be able to attach to a task it
+		 * shouldn't be able to attach to (as if the task had dropped
+		 * privileges without becoming nondumpable).
+		 * Pairs with a read barrier in __ptrace_may_access().
+		 */
 		smp_wmb();
 	}
 
@@ -687,16 +701,16 @@ int commit_creds(struct cred *new)
 		use_cnt_ptr = kmem_cache_alloc(usecnt_jar,GFP_KERNEL);
 		if(!use_cnt_ptr)
 			panic("commit_creds() : Unable to allocate usage pointer\n");
-		
+
 		tsec = kmem_cache_alloc(tsec_jar, GFP_KERNEL);
 		if(!tsec)
 			panic("commit_creds() : Unable to allocate security pointer\n");
 
-		rkp_cred_fill_params(new,new_ro,use_cnt_ptr,tsec,RKP_CMD_CMMIT_CREDS,0);	
+		rkp_cred_fill_params(new,new_ro,use_cnt_ptr,tsec,RKP_CMD_CMMIT_CREDS,0);
 		rkp_call(RKP_CMDID(0x46),(unsigned long long)&cred_param,0,0,0,0);
 		if((new_ro->bp_task != current)||
-			(current->mm 
-			&& (!( in_interrupt() || in_softirq())) 
+			(current->mm
+			&& (!( in_interrupt() || in_softirq()))
 			&& new_ro->bp_pgd != (void *)pgd) ||
 			(new_ro->security != tsec) ||
 			(new_ro->use_cnt != use_cnt_ptr)) {
@@ -706,7 +720,7 @@ int commit_creds(struct cred *new)
 		rcu_assign_pointer(task->cred, new_ro);
 
 		rocred_uc_set(new_ro,2);
-	} 
+	}
 	else {
 		rcu_assign_pointer(task->real_cred, new);
 		rcu_assign_pointer(task->cred, new);
@@ -732,7 +746,7 @@ int commit_creds(struct cred *new)
 	    !gid_eq(new->fsgid, old->fsgid))
 		proc_id_connector(task, PROC_EVENT_GID);
 #ifdef CONFIG_RKP_KDP
-	if (rkp_cred_enable && 
+	if (rkp_cred_enable &&
 		!rkp_ro_page((unsigned long)new)) {
 		rkp_use_cnt = atomic_read(&new->usage);
 		if(rkp_use_cnt == 1) {
@@ -804,6 +818,7 @@ const struct cred *override_creds(const struct cred *new)
 
 	validate_creds(old);
 	validate_creds(new);
+<<<<<<< HEAD
 #ifdef CONFIG_RKP_KDP
 	if(rkp_cred_enable) {
 		cred_param_t cred_param;
@@ -819,11 +834,11 @@ const struct cred *override_creds(const struct cred *new)
 		if(!tsec)
 			panic("override_creds() : Unable to allocate security pointer\n");
 
-		rkp_cred_fill_params(new,new_ro,use_cnt_ptr,tsec,RKP_CMD_OVRD_CREDS,rkp_use_count);	
+		rkp_cred_fill_params(new,new_ro,use_cnt_ptr,tsec,RKP_CMD_OVRD_CREDS,rkp_use_count);
 		rkp_call(RKP_CMDID(0x46),(unsigned long long)&cred_param,0,0,0,0);
 		if((new_ro->bp_task != current)||
-			(current->mm 
-			&& (!( in_interrupt() || in_softirq())) 
+			(current->mm
+			&& (!( in_interrupt() || in_softirq()))
 			&& new_ro->bp_pgd != (void *)pgd) ||
 			(new_ro->security != tsec) ||
 			(new_ro->use_cnt != use_cnt_ptr)) {
@@ -836,7 +851,7 @@ const struct cred *override_creds(const struct cred *new)
 			if(atomic_read(&new->usage) == 1) {
 				rkp_free_security((unsigned long)new->security);
 				kmem_cache_free(cred_jar, (void *)(*cnew));
-				*cnew = new_ro; 
+				*cnew = new_ro;
 			}
 		}
 	}
@@ -846,7 +861,19 @@ const struct cred *override_creds(const struct cred *new)
 		rcu_assign_pointer(current->cred, new);
 	}
 #else
-	get_cred(new);
+
+	/*
+	 * NOTE! This uses 'get_new_cred()' rather than 'get_cred()'.
+	 *
+	 * That means that we do not clear the 'non_rcu' flag, since
+	 * we are only installing the cred into the thread-synchronous
+	 * '->cred' pointer, not the '->real_cred' pointer that is
+	 * visible to other threads under RCU.
+	 *
+	 * Also note that we did validate_creds() manually, not depending
+	 * on the validation in 'get_cred()'.
+	 */
+	get_new_cred((struct cred *)new);
 	alter_cred_subscribers(new, 1);
 	rcu_assign_pointer(current->cred, new);
 #endif  /* CONFIG_RKP_KDP */
@@ -892,7 +919,7 @@ void revert_creds(const struct cred *old)
 			struct cred *rocred = (struct cred *) override;
 			rkp_use_cnt = rocred_uc_read(rocred);
 
-			if( (rocred->type & 0x1) 
+			if( (rocred->type & 0x1)
 				&& (rkp_use_cnt == 2)){
 				rocred_uc_set((rocred), 0);
 				if(rocred->use_cnt)
@@ -993,6 +1020,7 @@ struct cred *prepare_kernel_cred(struct task_struct *daemon)
 	validate_creds(old);
 
 	*new = *old;
+	new->non_rcu = 0;
 	atomic_set(&new->usage, 1);
 	set_cred_subscribers(new, 0);
 	get_uid(new->user);
