@@ -223,7 +223,6 @@ void __put_cred(struct cred *cred)
 #endif
 	BUG_ON(cred == current->cred);
 	BUG_ON(cred == current->real_cred);
-<<<<<<< HEAD
 #ifdef CONFIG_RKP_KDP
 	if (rkp_ro_page((unsigned long)cred)) {
 		put_ro_cred(cred);
@@ -818,7 +817,6 @@ const struct cred *override_creds(const struct cred *new)
 
 	validate_creds(old);
 	validate_creds(new);
-<<<<<<< HEAD
 #ifdef CONFIG_RKP_KDP
 	if(rkp_cred_enable) {
 		cred_param_t cred_param;
